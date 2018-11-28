@@ -1,0 +1,36 @@
+{
+  "name": "citizen",
+  "version": "0.0.1",
+  "description": "A distributed system of social checks and balances.",
+  "main": "citizen.js",
+  "repository": {
+    "type": "git"
+  },
+  "keywords": [
+    "distributed",
+    "blockchain",
+    "social"
+  ],
+  "author": "AJH",
+  "license": "MIT",
+  "scripts": {
+    "devweb": "nf run nodemon webserver.js --",
+    "inspectvc": "node --inspect-brk vc.js"
+  },
+  "dependencies": {
+    "compression": "^1.7.2",
+    "debug": "^3.1.0",
+    "dotenv": "^5.0.1",
+    "event-stream": "^3.3.4",
+    "express": "^4.16.3",
+    "express-rate-limit": "^2.11.0",
+    "helmet": "^3.12.0"
+  },
+  "engines": {
+    "node": ">=10.5.0"
+  },
+  "devDependencies": {
+    "foreman": "^3.0.1",
+    "nodemon": "^1.17.2"
+  }
+}
