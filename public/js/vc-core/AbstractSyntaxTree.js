@@ -5,14 +5,25 @@ var AST = (() => {
   if (typeof module !== 'undefined') U = require('./Utilities.js');
 
 
-  class InferrableTerm {}
+  class InferrableTerm extends U.Eq {}
 
   class Annotated extends InferrableTerm {
-    constructor (checkableTerm, type) {
+    constructor (checkableTerm1, checkableTerm2) {
       super();
-      if (U.testExtendedCtor(checkableTerm, CheckableTerm) && U.testExtendedCtor(type, Type)) {
-        Object.assign(this, { checkableTerm, type })
-      } else throw '?'
+      if (U.testExtendedCtor(checkableTerm1, CheckableTerm) && U.testExtendedCtor(checkableTerm2, CheckableTerm)) {
+        Object.assign(this, { checkableTerm1, checkableTerm2 })
+      } else throw new Error('?')
+    }
+  }
+
+  class Star extends InferrableTerm {}
+
+  class Pi extends InferrableTerm {
+    constructor (checkableTerm1, checkableTerm2) {
+      super()
+      if (U.testExtendedCtor(checkableTerm1, CheckableTerm) && U.testExtendedCtor(checkableTerm2, CheckableTerm)) {
+        Object.assign(this, { checkableTerm1, checkableTerm2 })
+      } else throw new Error('?')
     }
   }
 
@@ -21,7 +32,7 @@ var AST = (() => {
       super();
       if (U.testInteger(int)) {
         Object.assign(this, { int })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
@@ -30,7 +41,7 @@ var AST = (() => {
       super();
       if (U.testExtendedCtor(name, Name)) {
         Object.assign(this, { name })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
@@ -39,19 +50,23 @@ var AST = (() => {
       super();
       if (U.testExtendedCtor(inferrableTerm, InferrableTerm) && U.testExtendedCtor(checkableTerm, CheckableTerm)) {
         Object.assign(this, { inferrableTerm, checkableTerm })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
 
-  class CheckableTerm {}
+  class CheckableTerm extends U.Eq {
+    constructor () {
+      super()
+    }
+  }
 
   class Inferred extends CheckableTerm {
     constructor (inferrableTerm) {
       super();
       if (U.testExtendedCtor(inferrableTerm, InferrableTerm)) {
         Object.assign(this, { inferrableTerm })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
@@ -60,14 +75,14 @@ var AST = (() => {
       super();
       if (U.testExtendedCtor(checkableTerm, CheckableTerm)) {
         Object.assign(this, { checkableTerm })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
 
   class Name extends U.Eq {
     constructor () {
-      super();
+      super()
     }
   }
 
@@ -76,7 +91,7 @@ var AST = (() => {
       super();
       if (U.testCtor(string, String)) {
         Object.assign(this, { string })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
@@ -85,7 +100,7 @@ var AST = (() => {
       super();
       if (U.testInteger(int)) {
         Object.assign(this, { int })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
@@ -94,28 +109,7 @@ var AST = (() => {
       super();
       if (U.testInteger(int)) {
         Object.assign(this, { int })
-      } else throw '?'
-    }
-  }
-
-
-  class Type {}
-
-  class TFree extends Type {
-    constructor (name) {
-      super();
-      if (U.testExtendedCtor(name, Name)) {
-        Object.assign(this, { name })
-      } else throw '?'
-    }
-  }
-
-  class FunctionArrow extends Type {
-    constructor (type1, type2) {
-      super();
-      if (U.testExtendedCtor(type1, Type) && U.testExtendedCtor(type2, Type)) {
-        Object.assign(this, { type1, type2 })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
@@ -127,7 +121,18 @@ var AST = (() => {
       super();
       if (U.testCtor(func, Function)) {
         Object.assign(this, { func })
-      } else throw '?'
+      } else throw new Error('?')
+    }
+  }
+
+  class VStar extends Value {}
+
+  class VPi extends Value {
+    constructor (value, func) { //
+      super();
+      if (U.testExtendedCtor(value, Value) && U.testCtor(func, Function)) {
+        Object.assign(this, { value, func })
+      } else throw new Error('?')
     }
   }
 
@@ -136,7 +141,7 @@ var AST = (() => {
       super();
       if (U.testExtendedCtor(neutral, Neutral)) {
         Object.assign(this, { neutral })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
@@ -148,7 +153,7 @@ var AST = (() => {
       super();
       if (U.testExtendedCtor(name, Name)) {
         Object.assign(this, { name })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
@@ -157,16 +162,16 @@ var AST = (() => {
       super();
       if (U.testExtendedCtor(neutral, Neutral) && U.testExtendedCtor(value, Value)) {
         Object.assign(this, { neutral, value })
-      } else throw '?'
+      } else throw new Error('?')
     }
   }
 
   function vfree (name) {
     if (U.testExtendedCtor(name, Name)) {
       let value = new VNeutral(new NFree(name));
-      if (!U.testExtendedCtor(value, Value)) throw '?'
+      if (!U.testExtendedCtor(value, Value)) throw new Error('?')
       return value
-    } else throw '?'
+    } else throw new Error('?')
   }
 
 
@@ -181,11 +186,21 @@ var AST = (() => {
       let value;
       switch (inferrableTerm.constructor) {
         case Annotated:
-        value = checkEvaluate(inferrableTerm.checkableTerm, environment, nameEnvironment)
+        value = checkEvaluate(inferrableTerm.checkableTerm1, environment, nameEnvironment)
+        break;
+
+        case Star:
+        value = new VStar()
+        break;
+
+        case Pi:
+        value = new VPi(
+          checkEvaluate(inferrableTerm.checkableTerm1, environment, nameEnvironment),
+          x => checkEvaluate(inferrableTerm.checkableTerm2, environment.cons(x), nameEnvironment))
         break;
 
         case Bound:
-        value = environment.getValue(inferrableTerm.int)
+        value = environment.getValue(environment.length - inferrableTerm.int - 1)
         break;
 
         case Free:
@@ -206,11 +221,11 @@ var AST = (() => {
           checkEvaluate(inferrableTerm.checkableTerm, environment, nameEnvironment))
         break;
 
-        default: throw '?'
+        default: throw new Error('?')
       }
       if (U.testExtendedCtor(value, Value)) return value;
-      else throw '?'
-    } else throw '?'
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
   function vapply (value1, value2) {
@@ -225,11 +240,11 @@ var AST = (() => {
         value = new VNeutral(new NApply(value1.neutral, value2));
         break;
 
-        default: throw '?'
+        default: throw new Error('?')
       }
       if (U.testExtendedCtor(value, Value)) return value;
-      else throw '?'
-    } else throw '?'
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
   function checkEvaluate (checkableTerm, environment, nameEnvironment) {
@@ -244,47 +259,30 @@ var AST = (() => {
         value = new VLambda(x => checkEvaluate(checkableTerm.checkableTerm, environment.cons(x), nameEnvironment))
         break;
 
-        default: throw '?'
+        default: throw new Error('?')
       }
       if (U.testExtendedCtor(value, Value)) return value;
-      else throw '?'
-    } else throw '?'
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
-
-  class Kind {}
-
-  class Star extends Kind {}
-
-  class Info {}
-
-  class HasKind extends Info {
-    constructor (kind) {
-      super();
-      if (U.testExtendedCtor(kind, Kind)) {
-        Object.assign(this, { kind })
-      } else throw '?'
+  class Type {
+    constructor (value) {
+      if (U.testExtendedCtor(value, Value)) {
+        Object.assign(this, { value })
+      } else throw new Error('?')
     }
   }
 
-  class HasType extends Info {
-    constructor (type) {
-      super();
-      if (U.testExtendedCtor(type, Type)) {
-        Object.assign(this, { type })
-      } else throw '?'
-    }
-  }
-
-  class NameInfoPair extends U.ValidatedPair {
+  class NameTypePair extends U.ValidatedPair {
     constructor () {
-      super(Name, Info)
+      super(Name, Type)
     }
   }
 
   class Context extends U.ValidatedArray {
     constructor () {
-      super(NameInfoPair)
+      super(NameTypePair)
     }
   }
 
@@ -309,80 +307,66 @@ var AST = (() => {
 
   function throwError (string) {
     if (U.testCtor(string, String)) return (new Result(U.Unit)).left(string); //Actually of type Result a, not Result Unit
-    else throw '?'
+    else throw new Error('?')
   }
 
 
-  function checkKind (context, type, kind) {
-    if (U.testCtor(context, Context) && U.testExtendedCtor(type, Type) && U.testExtendedCtor(kind, Kind)) {
-      let res;
-      switch (type.constructor) {
-        case TFree:
-        let maybeInfo = context.lookup(type.name);
-        switch (maybeInfo.constructor) {
-          case maybeInfo.Just:
-          res = (new Result(U.Unit)).right(new U.Unit());
-          break;
-
-          case maybeInfo.Nothing:
-          res = throwError('Unknown identifier');
-          break;
-
-          default: throw '?'
-        }
-        break;
-
-        case FunctionArrow:
-        res = checkKind(context, type.type1, kind);
-        if (U.testExtendedCtor(res, res.Left)) break;
-        res = checkKind(context, type.type2, kind);
-        break;
-
-        default: throw '?'
-      }
-      if (U.testExtendedCtor(res, Result)) return res;
-      else throw '?'
-    } else throw '?'
+  function initialInferType (context, nameEnvironment, inferrableTerm) {
+    return inferType(0, context, nameEnvironment, inferrableTerm)
   }
 
-  function initialInferType (context, inferrableTerm) {
-    return inferType(0, context, inferrableTerm)
-  }
-
-  function inferType (int, context, inferrableTerm) {
-    if (U.testInteger(int) && U.testCtor(context, Context) && U.testExtendedCtor(inferrableTerm, InferrableTerm)) {
-      let res;
+  function inferType (int, context, nameEnvironment, inferrableTerm) {
+    if (U.testInteger(int) && U.testCtor(context, Context) && U.testCtor(nameEnvironment, NameEnvironment) && U.testExtendedCtor(inferrableTerm, InferrableTerm)) {
+      let res, type;
       switch (inferrableTerm.constructor) {
         case Annotated:
-        checkKind(context, inferrableTerm.type, new Star());
-        checkType(int, context, inferrableTerm.checkableTerm, inferrableTerm.type);
-        res = (new Result(Type)).right(inferrableTerm.type);
+        res = checkType(int, context, nameEnvironment, inferrableTerm.checkableTerm2, new VStar());
+        if (U.testCtor(res, res.Left)) break;
+        type = checkEvaluate(inferrableTerm.checkableTerm2, new Environment(), nameEnvironment);
+        res = checkType(int, context, nameEnvironment, inferrableTerm.checkableTerm1, type);
+        if (U.testCtor(res, res.Left)) break;
+        res = (new Result(Type)).right(new Type(type));
+        break;
+
+        case Star:
+        res = (new Result(Type)).right(new Type(new VStar()));
+        break;
+
+        case Pi:
+        res = checkType(int, context, nameEnvironment, inferrableTerm.checkableTerm1, new VStar());
+        if (U.testCtor(res, res.Left)) break;
+        type = checkEvaluate(inferrableTerm.checkableTerm1, new Environment(), nameEnvironment);
+        res = checkType(int + 1, context.cons(new NameTypePair().setValue(new Local(int), new Type(type))), nameEnvironment,
+          checkSubstitution(0, new Free(new Local(int)), inferrableTerm.checkableTerm2), new VStar());
+        if (U.testCtor(res, res.Left)) break;
+        res = (new Result(Type)).right(new Type(new VStar()));
         break;
 
         case Free:
-        let maybeInfo = context.lookup(inferrableTerm.name);
-        switch (maybeInfo.constructor) {
-          case maybeInfo.Just:
-          res = (new Result(Type)).right(maybeInfo.value.type);
+        let maybeType = context.lookup(inferrableTerm.name);
+        switch (maybeType.constructor) {
+          case maybeType.Just:
+          res = (new Result(Type)).right(maybeType.value);
           break;
 
-          case maybeInfo.Nothing:
+          case maybeType.Nothing:
           res = throwError('Unknown identifier');
           break;
 
-          default: throw '?'
+          default: throw new Error('?')
         }
         break;
 
         case Apply:
-        res = inferType(int, context, inferrableTerm.inferrableTerm);
-        if (U.testExtendedCtor(res, res.Left)) break;
-        switch (res.value.constructor) {
-          case FunctionArrow:
-          let { type2 } = res.value;
-          res = checkType(int, context, inferrableTerm.checkableTerm, res.value.type1)
-          if (U.testExtendedCtor(res, res.Left)) break;
-          res = (new Result(Type)).right(type2);
+        res = inferType(int, context, nameEnvironment, inferrableTerm.inferrableTerm);
+        if (U.testCtor(res, res.Left)) break;
+        switch (res.value.value.constructor) {
+          case VPi:
+          let {value, func} = res.value.value;
+          res = checkType(int, context, nameEnvironment, inferrableTerm.checkableTerm, value);
+          if (U.testCtor(res, res.Left)) break;
+          let temp = func(checkEvaluate(inferrableTerm.checkableTerm, new Environment(), nameEnvironment));
+          res = (new Result(Type)).right(new Type(temp));
           break;
 
           default:
@@ -390,35 +374,35 @@ var AST = (() => {
         }
         break;
 
-        default: throw '?'
+        default: throw new Error('?')
       }
-      if (U.testExtendedCtor(res, Result)) return res; //Is this of type Result Type?
-      else throw '?'
-    } else throw '?'
+      if (U.testExtendedCtor(res, Result)) return res;
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
-  function checkType (int, context, checkableTerm, type) {
-    if (U.testInteger(int) && U.testCtor(context, Context) && U.testExtendedCtor(checkableTerm, CheckableTerm) && U.testExtendedCtor(type, Type)) {
+  function checkType (int, context, nameEnvironment, checkableTerm, type) {
+    if (U.testInteger(int) && U.testCtor(context, Context) && U.testCtor(nameEnvironment, NameEnvironment) && U.testExtendedCtor(checkableTerm, CheckableTerm) && U.testExtendedCtor(type, Value)) {
       let res;
       switch (checkableTerm.constructor) {
         case Inferred:
-        res = inferType(int, context, checkableTerm.inferrableTerm);
-        if (U.testExtendedCtor(res, res.Left)) break;
-        if (res.value !== type) res = throwError('Type mismatch')
+        res = inferType(int, context, nameEnvironment, checkableTerm.inferrableTerm);
+        if (U.testCtor(res, res.Left)) break;
+        if (!initialQuote(res.value.value).equal(initialQuote(type))) res = throwError('Type mismatch')
         break;
 
         case Lambda:
-        if (type.constructor === FunctionArrow) {
-          context.cons((new context.elemType()).setValue(new Local(int), new HasType(type.type1)));
-          res = checkType(int + 1, context, checkSubstitution(0, new Free(new Local(int)), checkableTerm.checkableTerm), type.type2)
+        if (U.testCtor(type, VPi)) {
+          res = checkType(int + 1, context.cons(new NameTypePair().setValue(new Local(int), new Type(type.value))), nameEnvironment,
+            checkSubstitution(0, new Free(new Local(int)), checkableTerm.checkableTerm), type.func(vfree(new Local(int))))
         } else res = throwError('Type mismatch');
         break;
 
         default: res = throwError('Type mismatch')
       }
       if (U.testExtendedCtor(res, Result)) return res;
-      else throw '?'
-    } else throw '?'
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
   function inferSubstitution (int, inferrableTerm1, inferrableTerm2) {
@@ -426,7 +410,19 @@ var AST = (() => {
       let inferrableTerm;
       switch (inferrableTerm2.constructor) {
         case Annotated:
-        inferrableTerm = new Annotated(checkSubstitution(int, inferrableTerm1, inferrableTerm2.checkableTerm), inferrableTerm2.type);
+        inferrableTerm = new Annotated(
+          checkSubstitution(int, inferrableTerm1, inferrableTerm2.checkableTerm1),
+          checkSubstitution(int, inferrableTerm1, inferrableTerm2.checkableTerm2));
+        break;
+
+        case Star:
+        inferrableTerm = inferrableTerm1
+        break;
+
+        case Pi:
+        inferrableTerm = new Pi(
+          checkSubstitution(int, inferrableTerm1, inferrableTerm2.checkableTerm1),
+          checkSubstitution(int + 1, inferrableTerm1, inferrableTerm2.checkableTerm2))
         break;
 
         case Bound:
@@ -443,11 +439,11 @@ var AST = (() => {
           checkSubstitution(int, inferrableTerm1, inferrableTerm2.checkableTerm))
         break;
 
-        default: throw '?'
+        default: throw new Error('?')
       }
       if (U.testExtendedCtor(inferrableTerm, InferrableTerm)) return inferrableTerm;
-      else throw '?'
-    } else throw '?'
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
   function checkSubstitution (int, inferrableTerm, checkableTerm) {
@@ -462,11 +458,11 @@ var AST = (() => {
         checkTerm = new Lambda(checkSubstitution(int + 1, inferrableTerm, checkableTerm.checkableTerm));
         break;
 
-        default: throw '?'
+        default: throw new Error('?')
       }
       if (U.testExtendedCtor(checkTerm, CheckableTerm)) return checkTerm;
-      else throw '?'
-    } else throw '?'
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
 
@@ -482,15 +478,23 @@ var AST = (() => {
         checkableTerm = new Lambda(quote(int + 1, value.func(vfree(new Quote(int)))));
         break;
 
+        case VStar:
+        checkableTerm = new Inferred(new Star());
+        break;
+
+        case VPi:
+        checkableTerm = new Inferred(new Pi(quote(int, value.value), quote(int + 1, value.func(vfree(new Quote(int))))));
+        break;
+
         case VNeutral:
         checkableTerm = new Inferred(neutralQuote(int, value.neutral));
         break;
 
-        default: throw '?'
+        default: throw new Error('?')
       }
       if (U.testExtendedCtor(checkableTerm, CheckableTerm)) return checkableTerm;
-      else throw '?'
-    } else throw '?'
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
   function neutralQuote (int, neutral) {
@@ -505,11 +509,11 @@ var AST = (() => {
         inferrableTerm = new Apply(neutralQuote(int, neutral.neutral), quote(int, neutral.value));
         break;
 
-        default: throw '?'
+        default: throw new Error('?')
       }
       if (U.testExtendedCtor(inferrableTerm, InferrableTerm)) return inferrableTerm;
-      else throw '?'
-    } else throw '?'
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
 
@@ -525,17 +529,16 @@ var AST = (() => {
         inferrableTerm = new Free(name)
       }
       if (U.testExtendedCtor(inferrableTerm, InferrableTerm)) return inferrableTerm;
-      else throw '?'
-    } else throw '?'
+      else throw new Error('?')
+    } else throw new Error('?')
   }
 
   return {
-    InferrableTerm, Annotated, Bound, Free, Apply,
+    InferrableTerm, Annotated, Star, Pi, Bound, Free, Apply,
     CheckableTerm, Inferred, Lambda,
     Name, Global, Local, Quote,
 
-    Type, TFree, FunctionArrow,
-    Value, VLambda, VNeutral,
+    Value, VLambda, VStar, VPi, VNeutral,
 
     Neutral, NFree, NApply,
     vfree,
@@ -543,15 +546,14 @@ var AST = (() => {
     Environment,
     inferEvaluate, checkEvaluate,
 
-    Kind, Star,
-    Info, HasKind, HasType,
-    NameInfoPair, Context,
+    Type,
+    NameTypePair, Context,
     NameValuePair, NameEnvironment,
 
     Result,
     throwError,
 
-    checkKind, initialInferType, inferType, checkType, inferSubstitution, checkSubstitution,
+    initialInferType, inferType, checkType, inferSubstitution, checkSubstitution,
     initialQuote, quote, neutralQuote, boundfree
   }
 })();

@@ -5,7 +5,16 @@ var P = (() => {
   if (typeof module !== 'undefined') AST = require('./AbstractSyntaxTree.js');
 
   let tokens, token_nr, token;
-  let debug, nest_level;
+  let debug, ifDebug, nest_level;
+
+  function doDebug (msg) {
+    let n = token_nr, t = tokens[n];
+    if (msg === 'End statement?') console.log(`%c${msg}`, 'font-weight: bold', t, n);
+    else if (msg === 'Assign lhs?') console.log(`%c${msg}`, 'font-weight: bold; color: goldenrod', t, n);
+    else if (msg === 'Declare') console.log(`%c${msg}`, 'font-weight: bold; color: purple', t, n);
+    else if (msg === 'Evaluate') console.log(`%c${msg}`, 'font-weight: bold; color: forestgreen', t, n);
+    else console.log(msg, t, n)
+  }
 
   function dispense () {
     let maybe_next = tokens[token_nr++];
@@ -13,7 +22,8 @@ var P = (() => {
     else return maybe_next
   }
 
-  function advance (id, match) {
+  function advance (debugMsg, id, match) { // TODO: advance(msg, {identifier: true})
+    debugMsg && debug(debugMsg);
     if (typeof id !== 'undefined' && (tokens[token_nr].id !== id || typeof match !== 'undefined' && tokens[token_nr].value !== match))
       throw new Error(`Mismatch at '${token.id}', '${token.value}', token #${token_nr}: expected '${id}', '${match}'`);
     token = tokens[token_nr];
@@ -33,16 +43,30 @@ var P = (() => {
   function parens (inner) {
     if (nest_level > 20) throw new Error('Parens nest level too deep');
     return alt(() => {
-      debug('Open parens?', tokens[token_nr], token_nr, "level:", nest_level);
-      advance('(punctuation)', '(');
+      advance('Open parens?', '(punctuation)', '(');
+      ifDebug && console.group('Try parens');
       nest_level++
       return inner().then(result => {
-        debug('Close parens?', tokens[token_nr], token_nr, "level:", nest_level);
-        advance('(punctuation)', ')');
+        advance('Close parens?', '(punctuation)', ')');
+        ifDebug && console.groupEnd();
         nest_level--;
         return result
       }).catch(err => {
+        ifDebug && console.groupEnd();
         nest_level--;
+        throw err
+      })
+    })
+  }
+
+  function debugGroup (msg, inner) {
+    return alt(() => {
+      console.group(msg);
+      return inner().then(result => {
+        console.groupEnd();
+        return result
+      }).catch(err => {
+        console.groupEnd();
         throw err
       })
     })
@@ -55,119 +79,127 @@ var P = (() => {
     }
   }
 
+  class Assume {
+    constructor (s, v) {
+      this.string = s;
+      this.type = v
+    }
+  }
+
+
   function parseStmt (env, result) {
     function endTest (int) {
-      debug('End statement?', tokens[token_nr], token_nr);
+      debug('End statement?');
       return alt(() => {
-        advance('(newline)');
+        advance('', '(newline)');
         return parseStmt(env, result.concat(int))
       }).catch(() => alt(() => {
-        advance('(end)');
+        advance('', '(end)');
         return result.concat(int)
       })).catch(() => alt(() => {
-        advance('(comment)');
+        advance('', '(comment)');
         return parseStmt(env, result)
       }))
     }
     return endTest([]).catch(() => alt(() => { // Assign statement
-      debug('Assign lhs?', tokens[token_nr], token_nr);
-      advance();
+      advance('Assign lhs?');
       if (!token.identifier || 'value' in token) throw new Error(`Mismatch at ${token.id}, token #${token_nr}`);
       let x = token.id;
-      debug('Assign operator?', tokens[token_nr], token_nr);
-      advance('(infix)', '=');
+      advance('Assign operator?', '(infix)', ':=');
       return parseITerm(0, env)
         .then(y => endTest([new Eval(x, y)]))
     })).catch(() => alt(() => { // Declare statement
-      debug('Declare?', tokens[token_nr], token_nr);
-      advance('data');
-      return parseBindings()
+      debug('Declare');
+      return parseBindings(false, [])
+        .then(({boundvars, types}) => boundvars.reduce((a, x, i) => (a.push(new Assume(x.id, types[i])), a), []))
         .then(endTest)
     })).catch(() => { // Evaluate statement
-      debug('Evaluate', tokens[token_nr], token_nr)
+      debug('Evaluate');
       return parseITerm(0, env)
         .then(v => endTest([new Eval('it', v)]))
     })
   }
 
-  function parseBindings () {
-    function pInfo () {
+
+  function parseBindings (isPi, env) {
+    function parseBoundvars () {
       let loop;
-      debug('Binding variable?', tokens[token_nr], token_nr);
-      advance();
+      advance('Binding variable?');
       if (!token.identifier || 'value' in token) throw new Error(`Mismatch at ${token.id}, token #${token_nr}`);
-      let xs = [new AST.Global(token.id)];
-      return (loop = () => alt(() => {
-        debug('Binding comma?', tokens[token_nr], token_nr);
-        advance('(punctuation)', ',');
-        debug('Binding next variable?', tokens[token_nr], token_nr);
-        advance();
+      let boundvars = [token];
+      return (loop = () => alt(() => { // First alternative will always fail on the final loop
+        advance('Binding comma?', '(punctuation)', ',');
+        advance('Binding next variable?');
         if (!token.identifier || 'value' in token) throw new Error('Not an identifier');
-        xs.push(new AST.Global(token.id));
+        boundvars.push(token);
         return loop()
       }).catch(() => {
-        debug('Binding operator?', tokens[token_nr], token_nr);
-        advance('(infix)', ':');
-        return alt(() => {
-          debug('Binding star?', tokens[token_nr], token_nr);
-          advance('Type');
-          return xs.map(x => new AST.NameInfoPair().setValue(x, new AST.HasKind(new AST.Star())))
-        }).catch(() => parseType(0, []).then(t => xs.map(x => new AST.NameInfoPair().setValue(x, new AST.HasType(t)))))
+        advance('Binding operator?', '(infix)', ':');
+        return boundvars
       }))()
     }
-    return alt(() => {
+    return (ifDebug ? inner => debugGroup('Try bindings', inner) : alt)(() => {
       let loop;
-      return (loop = i => parens(() => pInfo())
-        .then(infos => alt(() => loop(i.concat(infos)))
-          .catch(() => i.concat(infos)))
-      )([])
-    }).catch(() => pInfo())
+      return (loop = (e, t) =>
+        parens(() =>
+          parseBoundvars()
+            .then(boundvars => parseCTerm(0, isPi ? e : [])
+              .then(type => ({e: e.concat(boundvars), t: t.concat(Array(boundvars.length).fill(type))}))))
+          .then(bindings => alt(() => {
+            if (isPi) advance('Pi binding comma?', '(punctuation)', ',');
+            return loop(bindings.e, bindings.t)
+          }).catch(() => ({boundvars: bindings.e, types: bindings.t}))))(env, [])
+        .catch(() => parseBoundvars()
+          .then(boundvars => parseCTerm(0, env)
+            .then(t => ({boundvars, types: Array(boundvars.length).fill(t)}))))
+    })
   }
 
-  function parseType (iclause, env) {
-    switch (iclause) {
-      case 0: // Function type
-      return parseType(1, env)
-        .then(t1 => alt(() => {
-          debug('Function arrow?', tokens[token_nr], token_nr);
-          advance('(infix)', '->');
-          return parseType(0, env)
-            .then(t2 => new AST.FunctionArrow(t1, t2))
-        }).catch(() => t1))
-
-      case 1: // Free type
-      return alt(() => {
-        debug('Type?', tokens[token_nr], token_nr);
-        advance();
-        if (!token.identifier || 'value' in token) throw new Error(`Mismatch at ${token.id}, token #${token_nr}`);
-        return new AST.TFree(new AST.Global(token.id))
-      }).catch(() => parens(() => parseType(0, env)))
-    }
-  }
 
   function parseITerm (iclause, env) {
     switch (iclause) {
-      case 0:
+      case 0: // Pi term
+      function fnArrow (term, env) {
+        let bound = token;
+        advance('Function arrow?', '(infix)', '->');
+        return parseCTerm(0, [''].concat(env)) // Anonymous pi bound term
+          .then(piBound => new AST.Pi(term, piBound))
+      }
+      return (ifDebug ? inner => debugGroup('Try Pi', inner) : alt)(() =>
+        parseBindings(true, env).then(({boundvars, types}) => {
+          advance('Pi arrow?', '(infix)', '==>');
+          return parseCTerm(0, boundvars.reverse()).then(piBound => {
+            let type = types.pop();
+            return types.reduce((a, x) => a = new AST.Pi(x, new AST.Inferred(a)), new AST.Pi(type, piBound))
+          })
+        })
+      ).catch(() => alt(() => parseITerm(1, env)
+        .then(x => alt(() => fnArrow(new AST.Inferred(x), env))
+          .catch(() => x))))
+        .catch(() => parens(() => parseLam(env))
+          .then(x => fnArrow(x, env)))
+
+
       case 1: // Annotated term
-      function rest (term) {
+      function binding (term) {
         return alt(() => {
-          debug('Annotated term?', tokens[token_nr], token_nr);
-          advance('(infix)', ':');
-          return parseType(0, env)
+          advance('Annotated term?', '(infix)', ':');
+          return parseCTerm(0, env)
             .then(x => new AST.Annotated(term, x))
         })
       }
-      return parseITerm(2, env)
-        .then(x => rest(new AST.Inferred(x))
+      return (ifDebug ? inner => debugGroup('Try Annotated', inner) : f => f())(() => parseITerm(2, env)
+        .then(x => binding(new AST.Inferred(x))
           .catch(() => x))
-        .catch(() => parens(() => parseLam())
-          .then(rest))
+        .catch(() => parens(() => parseLam(env))
+          .then(binding)))
+
 
       case 2: // Applied term
       return parseITerm(3, env)
-        .then(t => alt(() => {
+        .then(t => (ifDebug ? inner => debugGroup('Try Apply', inner) : alt)(() => {
           let ts = [], loop;
-          debug('Application?', tokens[token_nr], token_nr);
+          debug('Application?'); // TODO: fail out if Star?
           return (loop = () => parseCTerm(3, env)
             .then(cterm => {
               ts.push(cterm);
@@ -176,66 +208,68 @@ var P = (() => {
           )().catch(() => ts.reduce((a, x) => a = new AST.Apply(a, x), t))
         }).catch(() => t)) // Zero applications case
 
+
       case 3: // Variable term
       return alt(() => {
-        debug('Variable term?', tokens[token_nr], token_nr);
-        advance();
+        advance('Star?', 'Type');
+        return new AST.Star()
+      }).catch(() => alt(() => {
+        advance('Variable term?');
         if (!token.identifier || 'value' in token) throw new Error(`Mismatch at ${token.id}, token #${token_nr}`);
         let x = token,
             i = env.findIndex(x => x.id === token.id);
         return ~i ? new AST.Bound(i) : new AST.Free(new AST.Global(x.id))
-      }).catch(() => parens(() => parseITerm(0, env)))
+      })).catch(() => parens(() => parseITerm(0, env)))
     }
   }
+
 
   function parseCTerm (iclause, env) {
+    let ifD = ifDebug ? inner => debugGroup('Try CTerm', inner) : f => f()
     switch (iclause) {
       case 0:
-      return alt(() => parseLam(env))
+      return ifD(() => alt(() => parseLam(env))
         .catch(() => parseITerm(0, env)
-          .then(x => new AST.Inferred(x)))
+          .then(x => new AST.Inferred(x))))
 
       default:
-      return alt(() => parens(() => parseLam(env)))
+      return ifD(() => alt(() => parens(() => parseLam(env)))
         .catch(() => parseITerm(iclause, env)
-          .then(x => new AST.Inferred(x)))
+          .then(x => new AST.Inferred(x))))
     }
   }
 
+
   function parseLam (env) {
-    return alt(() => {
-      debug('Lambda bound variable?', tokens[token_nr], token_nr);
-      advance();
+    return (ifDebug ? inner => debugGroup('Try Lambda', inner) : f => f())(() => alt(() => {
+      advance('Lambda bound variable?');
       if (!token.identifier || 'value' in token) throw new Error(`Mismatch at ${token.id}, token #${token_nr}`);
       let boundvars = [], loop;
-      return (loop = () => alt(() => { // syntax: (x, y, ... => s)
+      return (loop = () => alt(() => {
         boundvars.push(token);
-        debug('Lambda comma?', tokens[token_nr], token_nr);
-        advance('(punctuation)', ',');
-        debug('Lambda next bound variable?', tokens[token_nr], token_nr);
-        advance()
+        advance('Lambda comma?', '(punctuation)', ',');
+        advance('Lambda next variable?')
         if (!token.identifier || 'value' in token) throw new Error('Not an identifier');
         return loop()
       }).catch(err => { if (err.message === 'Not an identifier') throw err }))()
         .then(() => {
-          debug('Lambda arrow?', tokens[token_nr], token_nr);
-          advance('(infix)', '=>');
+          advance('Lambda arrow?', '(infix)', '=>');
           return parseCTerm(0, boundvars.reverse().concat(env))
             .then(t => boundvars.reduce(a => a = new AST.Lambda(a), t))
         })
-    })
+    }))
   }
 
-  function parse (t, d) { // Must return an InferrableTerm
-    debug = d ? console.log : () => {};
+
+  function parse (t, d) {
+    debug = (ifDebug = d) ? doDebug : () => {};
     token_nr = 0;
     tokens = t;
     nest_level = 0;
-    debug(tokens);
-    return parseStmt([], []).catch(() => ['Parser error'])
+    return parseStmt([], []).catch(() => { throw 'Parser error' })
   }
 
-  return { parse, Eval }
+  return { parse, Eval, Assume }
 })();
 
 

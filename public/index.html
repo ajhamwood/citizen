@@ -26,7 +26,8 @@ body {
   margin: 0 1rem;
   width: calc(100% - 3rem - 2px);
   padding: .3rem .5rem;
-  border: 1px solid #bbb }
+  border: 1px solid #bbb;
+  font-family: monospace }
   </style>
 </head>
 <body>
@@ -34,23 +35,30 @@ body {
   <textarea id='repl-print' spellcheck='false' readonly></textarea>
   <input id='repl-read' type='text'>
   <script src='/js/utils.js'></script>
+
   <script src='/js/vc-core/Lexer.js'></script>
   <script src='/js/vc-core/Utilities.js'></script>
   <script src='/js/vc-core/AbstractSyntaxTree.js'></script>
   <script src='/js/vc-core/Printer.js'></script>
   <script src='/js/vc-core/Parser.js'></script>
   <script src='/js/vc-core/Interpreter.js'></script>
+
+  <!--script src='/js/test/test1.js'></script-->
   <script>
 
 // Page state
 let app = new $.Machine(Object.seal({
   lines: [],
-  state: new I.State(new AST.Context(), new AST.NameEnvironment())
+  state: new I.State(new AST.Context(), new AST.NameEnvironment()),
+  curIndex: 0,
+  curLine: ''
 }))
 
 .on('print', function (line, source) {
-  let len = this.lines.push(line),
+  let len = this.lines.push({line, isHistory: Boolean(source)}),
       prompt = source ? '> ' : '';
+  this.curIndex = this.lines.length;
+  this.curLine = '';
   $('#repl-print')[0].value += (len === 1 ? '' : '\n') + prompt + line
 })
 
@@ -58,7 +66,19 @@ let app = new $.Machine(Object.seal({
   return I.evaluate(line, this.state).then(result => {
     result.forEach(l => { if (l) app.emit('print', l) })
   });
+})
+
+.on('scroll', function (up) { // Clean this shit
+  if ((up && this.curIndex <= 0) || (!up && this.curIndex >= this.lines.length - 1)) return false;
+  let cur;
+  if (up) while (this.curIndex >= 0 && !(cur = this.lines[--this.curIndex]).isHistory);
+  else {
+    while (this.curIndex < this.lines.length - 1 && !(cur = this.lines[++this.curIndex]).isHistory);
+    if (this.curIndex === this.lines.length - 1 && !this.lines[this.curIndex].isHistory) while (!((cur = this.lines[--this.curIndex]).isHistory));
+  }
+  this.curLine = cur.line
 });
+
 
 
 // UI events
@@ -66,99 +86,7 @@ $.addEvents({
 
   '': {
     load () {
-      $('#repl-print')[0].value = '';
-      // TODO: Dedicated, thorough test file
-      /*
-      let id = new AST.Lambda(new AST.Inferred(new AST.Bound(0))),
-          cnst = new AST.Lambda(new AST.Lambda(new AST.Inferred(new AST.Bound(1)))),
-          tfree = x => new AST.TFree(new AST.Global(x)),
-          free = x => new AST.Inferred(new AST.Free(new AST.Global(x))),
-          term1 = new AST.Apply(new AST.Annotated(id, new AST.FunctionArrow(tfree('a'), tfree('a'))), free('y')),
-          term2 = new AST.Annotated(cnst, new AST.FunctionArrow(new AST.FunctionArrow(tfree('b'), tfree('b')), new AST.FunctionArrow(tfree('a'), new AST.FunctionArrow(tfree('b'), tfree('b'))))),
-          term2a = new AST.Apply(new AST.Apply(term2, id), free('y')),
-          env = new AST.Context(),
-          env1 = env.cons((new AST.NameInfoPair()).setValue(new AST.Global('y'), new AST.HasType(tfree('a')))).cons((new AST.NameInfoPair()).setValue(new AST.Global('a'), new AST.HasKind(new AST.Star()))),
-          env2 = env1.concat((new AST.Context()).cons((new AST.NameInfoPair()).setValue(new AST.Global('b'), new AST.HasKind(new AST.Star()))));
-      delete window.env;
-
-      console.log('Testing');
-      console.log('Printer:');
-      [ AST.initialQuote(AST.inferEvaluate(term1, new AST.Environment(), new AST.NameEnvironment())),
-        AST.initialQuote(AST.inferEvaluate(term2, new AST.Environment(), new AST.NameEnvironment())),
-        AST.initialQuote(AST.inferEvaluate(term2a, new AST.Environment(), new AST.NameEnvironment())),
-        AST.initialInferType(env1, term1),
-        AST.initialInferType(env2, term2),
-        AST.initialInferType(env2, term2a) ].forEach(expr => {
-        if (U.testExtendedCtor(expr, AST.CheckableTerm)) console.log(PP.print(expr));
-        else if (U.testExtendedCtor(expr, AST.Result)) {
-          if (U.testCtor(expr, expr.Right)) console.log(PP.printType(expr.value));
-          else if (U.testCtor(exp, expr.Left)) console.log('Evaluation error: ' + expr.value)
-        }
-      });
-
-      console.log('\nLexer:');
-      let teststring1 = `
-# Simply typed
-data a, b : Type
-id = (x => x) : a -> a
-const = (x, y => x) : (b -> b) -> a -> (b -> b)
-`     ;
-      console.log(L.tokenise(teststring1, true));
-
-      console.log('\nParser:');
-      let testlex1 = [ {id: "(newline)", identifier: false},
-        {id: "(comment)", identifier: false, value: " Simply typed"},
-        {id: "(newline)", identifier: false},
-        {id: "data", identifier: true},
-        {id: "a", identifier: true},
-        {id: "(punctuation)", identifier: true, value: ","},
-        {id: "b", identifier: true},
-        {id: "(infix)", identifier: true, value: ":"},
-        {id: "Type", identifier: true},
-        {id: "(newline)", identifier: false},
-        {id: "id", identifier: true},
-        {id: "(infix)", identifier: true, value: "="},
-        {id: "(punctuation)", identifier: true, value: "("},
-        {id: "x", identifier: true},
-        {id: "(infix)", identifier: true, value: "=>"},
-        {id: "x", identifier: true},
-        {id: "(punctuation)", identifier: true, value: ")"},
-        {id: "(infix)", identifier: true, value: ":"},
-        {id: "a", identifier: true},
-        {id: "(infix)", identifier: true, value: "->"},
-        {id: "a", identifier: true},
-        {id: "(newline)", identifier: false},
-        {id: "const", identifier: true},
-        {id: "(infix)", identifier: true, value: "="},
-        {id: "(punctuation)", identifier: true, value: "("},
-        {id: "x", identifier: true},
-        {id: "(punctuation)", identifier: true, value: ","},
-        {id: "y", identifier: true},
-        {id: "(infix)", identifier: true, value: "=>"},
-        {id: "x", identifier: true},
-        {id: "(punctuation)", identifier: true, value: ")"},
-        {id: "(infix)", identifier: true, value: ":"},
-        {id: "(punctuation)", identifier: true, value: "("},
-        {id: "b", identifier: true},
-        {id: "(infix)", identifier: true, value: "->"},
-        {id: "b", identifier: true},
-        {id: "(punctuation)", identifier: true, value: ")"},
-        {id: "(infix)", identifier: true, value: "->"},
-        {id: "a", identifier: true},
-        {id: "(infix)", identifier: true, value: "->"},
-        {id: "(punctuation)", identifier: true, value: "("},
-        {id: "b", identifier: true},
-        {id: "(infix)", identifier: true, value: "->"},
-        {id: "b", identifier: true},
-        {id: "(punctuation)", identifier: true, value: ")"},
-        {id: "(newline)", identifier: false},
-        {id: "(end)", identifier: false} ];
-      P.parse(testlex1, true).then(int => {
-        console.log(int);
-        console.log('\nInterpreter')
-        let state = new I.State(new AST.Context(), new AST.NameEnvironment());
-        return I.evaluate(teststring1, state)
-      }).then(console.log)*/
+      $('#repl-print')[0].value = ''
     }
   },
 
@@ -169,6 +97,12 @@ const = (x, y => x) : (b -> b) -> a -> (b -> b)
         app.emit('print', this.value, true);
         app.emit('eval', this.value);
         this.value = ''
+      } else if (e.key === 'ArrowUp') {
+        app.emit('scroll', true);
+        this.value = app.getState().curLine
+      } else if (e.key === 'ArrowDown') {
+        app.emit('scroll', false);
+        this.value = app.getState().curLine
       }
     }
   }
