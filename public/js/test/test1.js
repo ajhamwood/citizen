@@ -4,12 +4,15 @@ if (parsing = true) {
   console.log('Initial string:')
   let teststring = `
   # Pi Lambda
-  (Bool : Type) (true, false : Bool)
-  id2 := (s, y => y) : (t : Type), (z : t) ==> t
-  id1 := (x => x) : (a : Bool) ==> Bool
 
-  idB := id2 Bool
-  idB true
+  test := (x, y, z => z) : (x, y : Type), (z : y) ==> y
+
+  # (Bool : Type) (true, false : Bool)
+  # id1 := (x => x) : (a : Bool) ==> Bool
+  # id2 := (s, y => y) : (t : Type), (z : t) ==> t
+
+  # idB := id2 Bool
+  # idB true
   `;
   let lex;
   console.log(`\`${teststring}\``)

@@ -200,7 +200,7 @@ var AST = (() => {
         break;
 
         case Bound:
-        value = environment.getValue(environment.length - inferrableTerm.int - 1)
+        value = environment.getValue(inferrableTerm.int)
         break;
 
         case Free:
@@ -388,7 +388,7 @@ var AST = (() => {
         case Inferred:
         res = inferType(int, context, nameEnvironment, checkableTerm.inferrableTerm);
         if (U.testCtor(res, res.Left)) break;
-        if (!initialQuote(res.value.value).equal(initialQuote(type))) res = throwError('Type mismatch')
+        if (!initialQuote(res.value.value).equal(initialQuote(type))) res = throwError('Type mismatch');
         break;
 
         case Lambda:
@@ -416,7 +416,7 @@ var AST = (() => {
         break;
 
         case Star:
-        inferrableTerm = inferrableTerm1
+        inferrableTerm = inferrableTerm2
         break;
 
         case Pi:

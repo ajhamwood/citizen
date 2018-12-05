@@ -25,12 +25,11 @@ var U = (function () {
     }
     cons (value) {
       if (this.elemType.isPrototypeOf(value.constructor) || this.elemType === value.constructor) {
-        let ret = new this.constructor();
-        for (let i = 0; i < this.length; i++) ret.setValue(this[i]);
-        return ret.setValue(value)
+        let ret = new this.constructor().setValue(value);
+        for (let i = 1; i <= this.length; i++) ret.setValue(this[i - 1]);
+        return ret
       } else throw new Error('Bad type');
     }
-
     setValue (value, i = this.length) {
       if (Number(i) !== i && i % 1 !== 0 && i < 0 && i > length) throw new Error('Bad index');
       if (this.elemType.isPrototypeOf(value.constructor) || this.elemType === value.constructor) {
@@ -46,7 +45,6 @@ var U = (function () {
       this.length += va.length;
       return this
     }
-
     lookup (value) {
       if (ValidatedPair.isPrototypeOf(this.elemType)) {
         var dummy = new this.elemType();

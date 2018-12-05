@@ -111,7 +111,7 @@ var P = (() => {
     })).catch(() => alt(() => { // Declare statement
       debug('Declare');
       return parseBindings(false, [])
-        .then(({boundvars, types}) => boundvars.reduce((a, x, i) => (a.push(new Assume(x.id, types[i])), a), []))
+        .then(({boundvars, types}) => boundvars.reduce((a, x, i) => (a.push(new Assume(x.id, types[i])), a), []).reverse())
         .then(endTest)
     })).catch(() => { // Evaluate statement
       debug('Evaluate');
@@ -144,7 +144,7 @@ var P = (() => {
         parens(() =>
           parseBoundvars()
             .then(boundvars => parseCTerm(0, isPi ? e : [])
-              .then(type => ({e: e.concat(boundvars), t: t.concat(Array(boundvars.length).fill(type))}))))
+              .then(type => ({e: boundvars.reverse().concat(e), t: Array(boundvars.length).fill(type).concat(t)}))))
           .then(bindings => alt(() => {
             if (isPi) advance('Pi binding comma?', '(punctuation)', ',');
             return loop(bindings.e, bindings.t)
@@ -168,8 +168,8 @@ var P = (() => {
       return (ifDebug ? inner => debugGroup('Try Pi', inner) : alt)(() =>
         parseBindings(true, env).then(({boundvars, types}) => {
           advance('Pi arrow?', '(infix)', '==>');
-          return parseCTerm(0, boundvars.reverse()).then(piBound => {
-            let type = types.pop();
+          return parseCTerm(0, boundvars).then(piBound => {
+            let type = types.shift();
             return types.reduce((a, x) => a = new AST.Pi(x, new AST.Inferred(a)), new AST.Pi(type, piBound))
           })
         })
