@@ -1,0 +1,33 @@
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  display: flex}
+menu {
+  background: salmon;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-flow: column nowrap;
+  overflow: scroll }
+
+@media (min-aspect-ratio: 5/4) {
+  body { flex-direction: row }
+  svg { flex: 1 1 100vh }
+  menu { flex: 1 1 22em } }
+@media (max-aspect-ratio: 5/4) {
+  body { flex-direction: column }
+  svg { flex: 1 1 100vw }
+  menu { flex: 0 1 fit-content } }
+
+svg > circle { stroke: forestgreen }
+g.label { cursor: pointer }
+g.fingers > * { stroke: #333 }
+
+@media (prefers-color-scheme: dark) {
+  body { color: #ccc }
+  svg { background: #222 }
+  menu { background: midnightblue }
+  svg > circle { stroke: darkgreen }
+  g.fingers > * { stroke: #555 }
+  marker > path { fill: #555 } }

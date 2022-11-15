@@ -14,7 +14,7 @@ return Object.assign((sel, node = document) => node.querySelector(sel), {
       for (let k in state) Object.defineProperty(this, k, { get: () => state[k], set: v => state[k] = v }) }
     state () { return wm.get(this).state }
     on (t, fn) { (wm.get(this).es[t] ??= new Map()).set(fn.name, fn); return this }
-    stop (t, fname = t) { wm.get(this).es[t]?.delete(fname) && (es[t].size || delete es[t]); return this }
+    stop (t, fname = t) { let {es} = wm.get(this); es[t]?.delete(fname) && (es[t].size || delete es[t]); return this }
     emit (t, ...args) { return (a => (wm.get(this).es[t]?.forEach(fn => a[fn.name] = fn.apply(this, args)), a))({}) }
     emitAsync (t, ...args) { return (p => (wm.get(this).es[t]?.forEach(fn => p = p.then(a => r(fn.apply(this, args)).then(v => ({...a, [fn.name]: v})))), p))(r({})) } },
 
