@@ -19,8 +19,8 @@ return Object.assign((sel, node = document) => node.querySelector(sel), {
     emitAsync (t, ...args) { return (p => (wm.get(this).es[t]?.forEach(fn => p = p.then(a => r(fn.apply(this, args)).then(v => ({...a, [fn.name]: v})))), p))(r({})) } },
 
 //   $.pipe manages async event chronology
-  pipe: (ps => (p, ...ands) => ps[p] = (ps[p] ?? r()).then(() => Promise.all(ands.map(ors =>
-    (test(ors, Array) && Promise.race(ors.map(fn => fn()))) || (test(ors, Function) && ors())))))({}),
+  pipe: (ps => (p, ...ands) => ps[p] = (ps[p] ?? r()).then(v => Promise.all(ands.map(ors =>
+    (test(ors, Array) && Promise.race(ors.map(fn => fn(v)))) || (test(ors, Function) && ors(v))))))({}),
 
 //   $.targets recursively adds event listeners to objects and removes them by name, indexed by regex
   targets (obj, target = window) {
@@ -33,7 +33,7 @@ return Object.assign((sel, node = document) => node.querySelector(sel), {
 
 //   $.queries adds event listeners to DOM nodes and removes them by name, indexed by selector
   queries (obj, root) {
-    for (let q in obj) { let ns = $.all(q, root); if (ns.length) for (let ts in obj[q])
+    for (let q in obj) { let ns = q === "" ? [root] : $.all(q, root); if (ns.length) for (let ts in obj[q])
       if (test(obj[q][ts], Function)) ts.split(' ').forEach(t => ns.forEach(n => add(n, t, obj[q][ts].bind(n))));
       else if (test(obj[q][ts], String)) ts.split(' ').forEach(t => ns.forEach(n => remove(n, t, 'bound ' + obj[q][ts]))) } },
 

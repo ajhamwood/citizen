@@ -23,11 +23,12 @@ menu {
 svg > circle { stroke: forestgreen }
 g.label { cursor: pointer }
 g.fingers > * { stroke: #333 }
+marker > path { fill: #333 }
 
 @media (prefers-color-scheme: dark) {
   body { color: #ccc }
   svg { background: #222 }
   menu { background: midnightblue }
   svg > circle { stroke: darkgreen }
-  g.fingers > * { stroke: #555 }
-  marker > path { fill: #555 } }
+  g.fingers > * { stroke: #aaa }
+  marker > path { fill: #aaa } }

@@ -1,5 +1,5 @@
 function VM (options = {}) {
-  let { debug } = options, phase = null;
+  let { debug = { showPhase: false } } = options, phase = null;
   debug = (debugOpts => new Proxy(function () {}, { get ({}, prop) {
     let colour = (msg, thrown = false) => thrown && prop === "log" ? [ `%c${msg}`, "font-weight: bold; color: firebrick" ] : [msg],
         declutter = v => { if (v?.hasOwnProperty("source")) { let { source, ...o } = v; return [o] } else return [v] },
@@ -529,6 +529,7 @@ function VM (options = {}) {
   return Object.defineProperties({}, {
     import: { get () {
       return (opt = {}) => sequence(() => new Promise((ok, err) => {
+        // WebAssembly.Memory is available here as opt.memory
         if ("code" in opt && !("path" in opt)) ok(opt.code);
         else if ("path" in opt) fetch(opt.path).then(rsp => rsp.text()).then(ok).catch(err);
         else err({ message: "Load error: import option must be either 'code' or 'path'" })

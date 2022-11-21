@@ -1,4 +1,4 @@
-function angle (ar) { return 2 * Math.PI * ar.slice(0, 3).reduce((acc, b, i) => acc + b / (256 ** (i + 1)), 0) }
+function angle (addr) { return Number(BigInt(`0x${addr}`) / (2n ** 107n)) / (2 ** 52) * Math.PI }
 
 var viz = new $.Machine({
       margins: { top: 40, right: 40 },
@@ -194,7 +194,7 @@ $.targets({
     return this.emit("updateNode", addr, id).updateNode
   },
 
-  updateNode (addr, id) {  // This shouldn't happen to real nodes...
+  updateNode (addr, id) {  // This should happen once
     const { top, right } = this.margins,
           { width, height } = $("svg").getBoundingClientRect(),
           radius = Math.max(Math.min(width - 2 * right - 40, height - 2 * top - 40), 40) / 2,
@@ -252,6 +252,7 @@ $.targets({
       .attr("x2", x(this.peers[sink].peer[1]))
       .attr("y2", y(this.peers[sink].peer[1]))
       .attr("stroke-width", Math.max(3 - rank / 2, .5))
+      .attr("stroke-linecap", "butt")
       .attr("marker-end", "url(#arrow)")
   }
 }, viz)
