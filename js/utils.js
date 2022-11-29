@@ -1,0 +1,26 @@
+$.targets({
+  error (msg, src, lno, cno, e) {
+    if (e instanceof TellError) {
+      console.error(...e.details);
+      return true
+    } else return false
+  }
+});
+function getTime () { let d = performance.now() - appStart;
+  return String(d < 0 ? 1e7 + d : d).padStart(7, '0') }
+var appStart;
+class TellError extends Error { constructor (msg) { super(); this.details = msg } }
+const logLevels = { error: true, warn: true, log: true, info: false, debug: false },
+      logColours = { debug: "lightseagreen", info: "lightseagreen", log: "tomato", warn: "tomato", error: "tomato" },
+      tell = new Proxy({}, { get ({}, prop) {
+        if (logLevels[prop]) return function (event, ...args) {
+        let message = [ `${getTime.call(this)} %c${this.addr} %c${event}`,
+        "color: greenyellow; font-weight: 900", `color: ${logColours[prop]}; font-weight: 900`, ...args ];
+        if (prop === "error") throw new TellError(message);
+        else console[prop](...message)
+        };
+        else return () => {}
+      } }),
+      fromBuf = buf => new Uint8Array(buf).reduce((acc, b) => 256n * acc + BigInt(b), 0n),
+      toSHA1 = async msg => new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(msg))),
+      keyToId = async k => fromBuf(await toSHA1(k)).toString(16).padStart(40, "0");

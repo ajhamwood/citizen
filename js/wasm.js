@@ -30,6 +30,57 @@ class Emitter {
   }
 }
 
+assert = cond => cond || tell.error.call({ addr: "WASM" }, "ASSERTION FAILURE");
+assert(false)
+
+class bytes_atom {
+  constructor(typeTag, arrayLike) {
+    this.t = typeTag;
+    this.z = arrayLike.length;
+    this.v = arrayLike
+  }
+  emit (e) { return e.writeBytes(this.v) }
+}
+class val_atom {
+  constructor (typeTag, uint32, v) {
+    this.t = typeTag;
+    this.z = uint32;
+    this.v = v
+  }
+}
+class bytesval_atom extends val_atom {
+  constructor (typeTag, v, bytes) {
+    super(typeTag, bytes.length, v);
+    this.bytes = bytes
+  }
+  emit (e) { return e.writeBytes(this.bytes) }
+}
+class u32_atom extends val_atom {
+  constructor (uint32) { super(T.uint32, 4, uint32) }
+  emit (e) { return e.writeU32(this.v) }
+}
+class f32_atom extends val_atom {
+  constructor (v) { super(T.float32, 4, v) }
+  emit (e) { return e.writeF32(this.v) }
+}
+class f64_atom extends val_atom {
+  constructor (v) { super(T.float64, 8, v) }
+  emit (e) { return e.writeF64(this.v) }
+}
+class u8_atom extends val_atom {
+  constructor (typeTag, v) { super(typeTag, 1, v) }
+  emit (e) { return e.writeU8(this.v) }
+}
+class type_atom extends u8_atom {
+  constructor (int7, uint8) { super(T.type, int7); this.b = uint8 }
+  emit (e) { return e.writeU8(this.b) }
+}
+class str_atom {
+  constructor (varuint32, arrayLike) {
+    assert(varuint32.v === arrayLike.length);
+  }
+}
+
 const
   T = {
     // Values in wasm are little-endian (except where specified otherwise)
