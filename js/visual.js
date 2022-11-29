@@ -1,5 +1,8 @@
 function angle (addr) { return Number(BigInt(`0x${addr}`) / (2n ** 107n)) / (2 ** 52) * Math.PI }
 
+
+// Chord address space and network connection visualisation
+
 var viz = new $.Machine({
       margins: { top: 40, right: 40 },
       textPad: 7,
@@ -44,11 +47,12 @@ $.targets({
 
   restartSim (cb = () => {}) {
     const { top, right } = this.margins,
-          { width, height } = $("svg").getBoundingClientRect(),
-          radius = Math.max(Math.min(width - 2 * right - 40, height - 2 * top - 40), 40) / 2,
+          { width, height, y: ypx } = $("svg").getBoundingClientRect(),
+          radius = Math.max(Math.min(width - 2 * right - 40, height - 2 * top - 40), 40) / 2;
 
-          { top: ringTop, left: ringLeft } = $("svg > circle").getBoundingClientRect(),
-          x = (v, dr = 0) => ringLeft - dr + 2.5 + (radius + dr) * (1 + Math.sin(angle(v))),
+    let { top: ringTop, left: ringLeft } = $("svg > circle").getBoundingClientRect();
+    ringTop -= ypx;
+    const x = (v, dr = 0) => ringLeft - dr + 2.5 + (radius + dr) * (1 + Math.sin(angle(v))),
           y = (v, dr = 0) => ringTop - dr + 2.5 + (radius + dr) * (1 - Math.cos(angle(v))),
           { textPad } = this,
 
@@ -138,14 +142,16 @@ $.targets({
   },
   
   resize () {
+    const { width, height, y: ypx } = $("svg").getBoundingClientRect();
+    if (width === 0 && height === 0) return;
     const self = this, { top, right } = this.margins,
-          { width, height } = $("svg").getBoundingClientRect(),
           radius = Math.max(Math.min(width / 2 - right - 20, height / 2 - top - 20), 20),
           { textPad } = this;
     d3.select("svg > circle")
         .attr('r', radius);
-    const { top: ringTop, left: ringLeft } = $("svg > circle").getBoundingClientRect(),
-          x = (v, dr = 0) => ringLeft - dr + 2.5 + (radius + dr) * (1 + Math.sin(angle(v))),
+    let { top: ringTop, left: ringLeft } = $("svg > circle").getBoundingClientRect();
+    ringTop -= ypx;
+    const x = (v, dr = 0) => ringLeft - dr + 2.5 + (radius + dr) * (1 + Math.sin(angle(v))),
           y = (v, dr = 0) => ringTop - dr + 2.5 + (radius + dr) * (1 - Math.cos(angle(v))),
           dots = d3.selectAll("g.dot"),
           labels = d3.selectAll("g.label");
@@ -196,10 +202,11 @@ $.targets({
 
   updateNode (addr, id) {  // This should happen once
     const { top, right } = this.margins,
-          { width, height } = $("svg").getBoundingClientRect(),
-          radius = Math.max(Math.min(width - 2 * right - 40, height - 2 * top - 40), 40) / 2,
-          { top: ringTop, left: ringLeft } = $("svg > circle").getBoundingClientRect(),
-          x = (v, dr = 0) => ringLeft - dr + 2.5 + (radius + dr) * (1 + Math.sin(angle(v))),
+          { width, height, y: ypx } = $("svg").getBoundingClientRect(),
+          radius = Math.max(Math.min(width - 2 * right - 40, height - 2 * top - 40), 40) / 2;
+    let { top: ringTop, left: ringLeft } = $("svg > circle").getBoundingClientRect();
+    ringTop -= ypx;
+    const x = (v, dr = 0) => ringLeft - dr + 2.5 + (radius + dr) * (1 + Math.sin(angle(v))),
           y = (v, dr = 0) => ringTop - dr + 2.5 + (radius + dr) * (1 - Math.cos(angle(v))),
           { textPad } = this;
     let dots = d3.select(`g.dot[data-addr="${addr}"]`);
@@ -233,10 +240,11 @@ $.targets({
 
   drawArrow (source, sink, rank) {
     const { top, right } = this.margins,
-          { width, height } = $("svg").getBoundingClientRect(),
-          radius = Math.max(Math.min(width - 2 * right - 40, height - 2 * top - 40), 40) / 2,
-          { top: ringTop, left: ringLeft } = $("svg > circle").getBoundingClientRect(),
-          x = (v, dr = 0) => ringLeft - dr + 2.5 + (radius + dr) * (1 + Math.sin(angle(v))),
+          { width, height, y: ypx } = $("svg").getBoundingClientRect(),
+          radius = Math.max(Math.min(width - 2 * right - 40, height - 2 * top - 40), 40) / 2;
+    let { top: ringTop, left: ringLeft } = $("svg > circle").getBoundingClientRect();
+    ringTop -= ypx;
+    const x = (v, dr = 0) => ringLeft - dr + 2.5 + (radius + dr) * (1 + Math.sin(angle(v))),
           y = (v, dr = 0) => ringTop - dr + 2.5 + (radius + dr) * (1 - Math.cos(angle(v))),
           fingers = d3.select("g.fingers");
     if (source === sink) fingers.append("use")

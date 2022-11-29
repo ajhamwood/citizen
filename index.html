@@ -6,130 +6,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="keywords" content="Citizen, blockchain, smart contracts, toy implementation">
   <meta name="description" content="Simple in-browser toy implementation of the Citizen blockchain project.">
-  <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,">
+  <link rel="icon" type="image/x-icon" href="icons/favicon.ico">
   <link rel="stylesheet" href="css/main.css">
-<style>
-.wc-peer {
-  display: flex;
-  flex-flow: column nowrap;
-  gap: .3em;
-  width: calc(100% - 1em);
-  padding: .5em;
-  margin-bottom: -.5em }
-.wc-peer:not(.pseudofocus) { cursor: cell }
-.wc-peer.pseudofocus {
-  margin: .5em 0 0 0;
-  background: #0002 }
-.wc-peer.pseudofocus:first-child { margin-top: 0 }
-  .wc-peer > * {
-    display: grid;
-    grid-template-columns: 7em auto min-content;
-    row-gap: .3em }
-  .chord-peer {
-    grid-template-columns: min-content auto min-content;
-    align-items: baseline }
-    .wc-peer > * > * { width: fit-content }
-    .peer-id {
-      font: 1rem monospace;
-      text-overflow: ellipsis;
-      overflow: hidden;
-      white-space: nowrap;
-      width: 100% }
-    .peer-id:not(:empty)::before { content: " : " }
-    .chord-interact {
-      margin-left: .5em;
-      display: flex;
-      flex-flow: row nowrap;
-      gap: .3em }
-      .chord-addr { width: 4em }
-  .wc-peer:not(.pseudofocus) > :not(.chord-peer) { display: none }
-    .chord-finger-list:empty::before,
-    .bucket-hash:empty::before,
-    .bucket-dump-hash.confirmed:empty::before {
-      content: "No data";
-      color: #0006 }
-      .chord-finger-rank::before { content: "Rank " }
-      .chord-finger-rank::after { content: " @" }
-      .chord-finger-addr::before { content: "Addr=" }
-    .bucket-hash { grid-column-end: span 2 }
-      .bucket-hash-entry {
-        display: grid;
-        grid-template-columns: 1fr minmax(min-content, 1fr) }
-        .bucket-hash-key {
-          font: 1rem monospace;
-          text-overflow: ellipsis;
-          overflow: hidden;
-          white-space: nowrap }
-        .bucket-hash-value::before { content: "→ " }
-    .bucket-operations {
-      width: 100%;
-      display: grid;
-      grid-column-end: span 3;
-      grid-template-rows: repeat(5, min-content);
-      row-gap: .3em }
-      .bucket-operation {
-        display: grid;
-        grid-template-columns: 3.5em minmax(4em, 1fr) minmax(2em, 4fr) 2em;
-        grid-template-rows: subgrid;
-        column-gap: .5em;
-        align-items: start }
-        .bucket-operation > .button { justify-self: start }
-        .bucket-confirmed.check::before { content: "✓" }
-        .bucket-show-value, .bucket-confirmed { align-self: center }
-        .bucket-dump-hash { grid-column-end: span 2 }
-.button {
-  padding: .1em .15em;
-  border-radius: .2em;
-  background: white;
-  border: 1.5px solid #bbb;
-  cursor: pointer;
-  user-select: none;
-  font: 1rem sans }
-.button:active { background: #bbb }
-.citizen-createnode {
-  align-self: flex-start;
-  margin: .5em }
-
-@media (prefers-color-scheme: dark) {
-  .wc-peer.pseudofocus { background: #fff2 }
-  .button {
-    background: #222;
-    border-color: #777 }
-  .button:active { background-color: #666 }
-  .chord-finger-list:empty::before,
-  .bucket-hash:empty::before,
-  .bucket-dump-hash.confirmed:empty::before { color: #fff6 }
-}
-  </style>
+  <link rel="stylesheet" href="css/peer.css">
 </head>
-<body>
-  <svg>
-    <defs>
-      <marker id="arrow" markerUnits="strokeWidth" markerWidth="12" markerHeight="12" viewBox="0 0 12 12" refX="10" refY="6" orient="auto">
-        <path d="M2,2 L10,6 L2,10 L6,6 L2,2"></path>
-      </marker>
-      <path id="self-ref" fill="none" stroke-linecap="butt"
-            d="m 0,0 v 0 C -5.288559,5.39605 -10.582511,10.798483 -15.745937,15.306049 c -3.961451,3.458327 -7.891658,6.429724 -11.676608,8.427416 -3.035711,1.602276 -6.164582,2.676735 -9.178754,2.676735 -1.693993,0 -3.542617,-0.339348 -5.375179,-1.347016 -2.885326,-1.586587 -5.015739,-4.437525 -6.530436,-7.787253 -2.19562,-4.855709 -3.254959,-11.107875 -3.254959,-17.27626700102 0,-6.168392 1.059339,-12.420558 3.254959,-17.276267 1.514697,-3.349729 3.64511,-6.200667 6.530436,-7.787254 1.832562,-1.007668 3.681186,-1.347016 5.375179,-1.347016 3.014172,0 6.143043,1.074459 9.178754,2.676735 3.78495,1.997692 7.715157,4.96909 11.676608,8.427417 5.163426,4.507566 10.457378,9.91 15.74554,15.306385 0,0" />
-    </defs>
-    <circle cx="50%" cy="50%" fill="none" stroke-width="5"></circle>
-    <g class="dots"></g>
-    <g class="fingers"></g>
-  </svg>
-  <menu>
-    <span class="citizen-createnode button">Create node</span>
-  </menu>
+<body data-section="nodeView">
+  <header data-sim="inactive">
+    <div id="logo">Citizen</div>
+    <nav>
+      <span id="pausePlay" class="button"></span>
+      <span id="advance" class="button"></span>
+      <span id="label">Label</span>
+    </nav>
+    <div id="nodeViewMenu">
+      <select id="simSelect" required>
+        <option value="">Choose simulation</option>
+      </select>
+      <span class="button sectionToggle">kat REPL</span>
+    </div>
+    <div id="katReplMenu">
+      <span id="run" class="button">Run</span>
+      <span class="button sectionToggle">Node view</span>
+    </div>
+  </header>
+  <section id="nodeView">
+    <svg>
+      <defs>
+        <marker id="arrow" markerUnits="strokeWidth" markerWidth="12" markerHeight="12" viewBox="0 0 12 12" refX="10" refY="6" orient="auto">
+          <path d="M2,2 L10,6 L2,10 L6,6 L2,2"></path>
+        </marker>
+        <path id="self-ref" fill="none" stroke-linecap="butt"
+              d="m 0,0 v 0 C -5.288559,5.39605 -10.582511,10.798483 -15.745937,15.306049 c -3.961451,3.458327 -7.891658,6.429724 -11.676608,8.427416 -3.035711,1.602276 -6.164582,2.676735 -9.178754,2.676735 -1.693993,0 -3.542617,-0.339348 -5.375179,-1.347016 -2.885326,-1.586587 -5.015739,-4.437525 -6.530436,-7.787253 -2.19562,-4.855709 -3.254959,-11.107875 -3.254959,-17.27626700102 0,-6.168392 1.059339,-12.420558 3.254959,-17.276267 1.514697,-3.349729 3.64511,-6.200667 6.530436,-7.787254 1.832562,-1.007668 3.681186,-1.347016 5.375179,-1.347016 3.014172,0 6.143043,1.074459 9.178754,2.676735 3.78495,1.997692 7.715157,4.96909 11.676608,8.427417 5.163426,4.507566 10.457378,9.91 15.74554,15.306385 0,0" />
+      </defs>
+      <circle cx="50%" cy="50%" fill="none" stroke-width="5"></circle>
+      <g class="dots"></g>
+      <g class="fingers"></g>
+    </svg>
+    <menu>
+      <span class="peer-createnode button">Create node</span>
+    </menu>
+  </section>
+  <section id="katRepl">
+    <textarea id="source" spellcheck="false"></textarea>
+    <div id="log"></div>
+  </section>
+  <template id="option">
+    <option class="opt"></option>
+  </template>
+  <template id="hr"><hr></template>
   <template id="wc-peer">
     <div class="wc-peer" tabindex="0">
       <div class="chord-peer">
-        <span class="peer-addr"></span>
-        <span class="peer-id"></span>
+        <span class="peer-addr" title="Node network address"></span>
+        <span class="peer-id ellipsis" title="Node account id"></span>
+        <span class="pbft-proposer"></span>
+        <span class="pbft-phase-top" title="pBFT voting phase"></span>
         <div class="chord-interact"></div>
       </div>
-      <div class="chord-fingers">
+      <div class="chord-fingers align">
+        <span>Chord</span>
         <span>Finger table:</span>
         <div class="chord-finger-list"></div>
       </div>
-      <div class="bucket-interact">
+      <div class="bucket-interact align">
+        <span>DHT</span>
         <span>Hash table:</span>
         <div class="bucket-hash"></div>
         <div class="bucket-operations">
@@ -165,6 +105,50 @@
           </div>
         </div>
       </div>
+      <div class="pbft-data align">
+        <span>pBFT</span>
+        <span class="pbft-phase"></span>
+        <span class="pbft-requirement"></span>
+        <div class="pbft-collection"></div>
+      </div>
+      <div class="blockchain-data">
+        <span>Blockchain</span>
+        <select class="sel blockchain-seqno"></select>
+        <span class="blockchain-hash ellipsis"></span>
+        <span class="blockchain-timestamp"></span>
+        <div class="blockchain-txlist"></div>
+      </div>
+      <div class="smart-contract-interact">
+        <span>Smart contracts</span>
+        <div class="smart-contract-transactions">
+          <div class="smart-contract-transaction">
+            <span class="button smart-contract-create">Create</span>
+            <textarea class="smart-contract-codeinput" placeholder="kat code" spellcheck="false"></textarea>
+          </div>
+          <div class="smart-contract-transaction" data-codeview="raw">
+            <span class="button smart-contract-run">Run</span>
+            <select class="sel smart-contract-account" required></select>
+            <div class="smart-contract-arginputs"></div>
+            <span class="button smart-contract-args"></span>
+            <form class="choice smart-contract-codeview">
+              <input type="radio" name="codeview" checked><label>Raw</label>
+              <input type="radio" name="codeview"><label>Value</label>
+            </form>
+            <div class="smart-contract-codelisting">
+              <div class="smart-contract-coderaw" title="Program code"></div>
+              <div class="smart-contract-programvalue">
+                <div class="smart-contract-term" title="Program value"></div>
+                <div class="smart-contract-type" title="Program type"></div>
+              </div>
+              <div class="smart-contract-programcontexts">
+                <div class="smart-contract-elab" title="Program elaboration"></div>
+                <hr>
+                <div class="smart-contract-metacontext" title="Program metacontext"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </template>
   <template id="chord-listen">
@@ -177,9 +161,6 @@
       <option value="" class="opt">addr</option>
     </select>
   </template>
-  <template id="addr-option">
-    <option class="opt"></option>
-  </template>
   <template id="chord-finger">
     <div class="chord-finger">
       <span class="chord-finger-rank"></span>
@@ -188,15 +169,62 @@
   </template>
   <template id="bucket-hash-entry">
     <div class="bucket-hash-entry">
-      <span class="bucket-hash-key"></span>
+      <span class="bucket-hash-key ellipsis"></span>
       <span class="bucket-hash-value"></span>
     </div>
+  </template>
+  <template id="pbft-transaction">
+    <div class="pbft-transaction">
+      <span class="pbft-txid ellipsis"></span>
+      <span class="pbft-txfrom ellipsis"></span>
+    </div>
+  </template>
+  <template id="pbft-block">
+    <div class="pbft-block">
+      <span class="pbft-blockhash ellipsis"></span>
+      <span class="pbft-votesreceived"></span>
+      <span class="pbft-message"></span>
+    </div>
+  </template>
+  <template id="blockchain-transaction">
+    <div class="blockchain-transaction" data-codeview="raw">
+      <span class="blockchain-txfrom ellipsis"></span>
+      <span class="blockchain-txid ellipsis"></span>
+      <span class="blockchain-txto ellipsis"></span>
+      <span class="blockchain-txtype"></span>
+      <form class="choice smart-contract-codeview">
+        <input type="radio" name="codeview" checked><label>Raw</label>
+        <input type="radio" name="codeview"><label>Value</label>
+      </form>
+      <div class="blockchain-txcode">
+        <div class="smart-contract-appliedargs"></div>
+        <div class="smart-contract-coderaw" title="Program code"></div>
+        <div class="smart-contract-programvalue">
+          <div class="smart-contract-term" title="Program value"></div>
+          <div class="smart-contract-type" title="Program type"></div>
+        </div>
+        <div class="smart-contract-programcontexts">
+          <div class="smart-contract-elab" title="Program elaboration"></div>
+          <hr>
+          <div class="smart-contract-metacontext" title="Program metacontext"></div>
+        </div>
+      </div>
+    </div>
+  </template>
+  <template id="smart-contract-meta">
+    <div class="smart-contract-meta"></div>
+  </template>
+  <template id="smart-contract-arginput">
+    <input type="text" class="field smart-contract-arginput"></input>
+  </template>
+  <template id="smart-contract-appliedarg">
+    <div class="smart-contract-appliedarg"></div>
   </template>
   <script src="vnd/d3.v5.js"></script>
   <script src="js/machine.js"></script>
   <script src="js/visual.js"></script>
-  <!-- <script src="js/trie.js"></script> -->
-  <!-- <script src="js/vm.js"></script> -->
+  <script src="js/vm.js"></script>
+  <script src="js/sims.js"></script>
   <script src="js/citizen.js"></script>
   <noscript><h6>Only viewable with JavaScript enabled.</h6></noscript>
 </body>
