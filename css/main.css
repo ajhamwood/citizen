@@ -1,34 +1,168 @@
+/* Home page styling */
+
+@font-face {
+  font-family: 'univers';
+  src: url('../fonts/UniversNextTypewriter.woff')  format('woff'),
+      url('../fonts/UniversNextTypewriter.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap }
+@font-face {
+  font-family: 'literata';
+  src: url('../fonts/Literata-Regular.woff2') format('woff2'),
+      url('../fonts/Literata-Regular.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap }
+@font-face {
+  font-family: 'literata';
+  src: url('../fonts/Literata-Bold.woff2') format('woff2'),
+      url('../fonts/Literata-Bold.woff') format('woff');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap }
+@font-face {
+  font-family: 'stixtwomath';
+  src: url('../fonts/STIXTwoMath-Regular.woff2') format('woff2'),
+      url('../fonts/STIXTwoMath-Regular.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap }
+@font-face {
+  font-family: 'lato';
+  src: url('../fonts/Lato-Regular.woff2') format('woff2'),
+      url('../fonts/Lato-Regular.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap }
+
+* { font-family: literata }
 body {
   margin: 0;
   height: 100vh;
   overflow: hidden;
-  display: flex}
-menu {
-  background: salmon;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-flow: column nowrap;
-  overflow: scroll }
+  color: #e3e3e3;
+  gap: 1px;
+  background: #455d7a }
+.button {
+  padding: .1em .2em;
+  border-radius: .2em;
+  background: #0002;
+  border: 1.5px solid #0007;
+  cursor: pointer;
+  user-select: none;
+  font: 1rem lato }
+.button:active { background: #0006 }
+.choice {
+  display: flex;
+  width: fit-content;
+  border-radius: .2em;
+  border: 1.5px solid #0007;
+  cursor: pointer;
+  user-select: none }
+.choice > input[type='radio'] { display: none }
+.choice > input[type='radio'] + label {
+  display: block;
+  white-space: pre-wrap;
+  padding: .1em .2em;
+  font: 1rem lato;
+  cursor: pointer }
+.choice > input[type='radio'] + label:active { background: #0006 }
+.choice > input[type='radio']:checked + label { background: #0002 }
+select { font-family: lato }
+section {
+  flex: 1 0;
+  height: 0;
+  display: flex }
+  header {
+    display: flex;
+    flex-flow: row wrap;
+    justify-content: space-between;
+    align-items: center;
+    padding: .5em;
+    background: #233142;
+    font-family: lato;
+    text-align: center;
+    gap: .5em }
+    #logo {
+      font: x-large literata;
+      margin-left: .3em }
+    [data-section="katRepl"] nav,
+    [data-sim="inactive"] > nav { display: none }
+      #pausePlay, #advance {
+        font-family: stixtwomath;
+        vertical-align: text-bottom;
+        padding-right: .3em }
+      #pausePlay::before, #advance::before { vertical-align: text-top }
+      [data-sim="paused"] #pausePlay::before { content: "⏵" }
+      [data-sim="playing"] #pausePlay::before { content: "⏸" }
+      #advance::before { content: "⏭" }
+      [data-sim="playing"] #advance { display: none }
+      #pausePlay { transition: border-color .5s ease-out }
+      #pausePlay.flash {
+        border-color: red;
+        transition: border-color 0s }
+      b { font-size: .99em }
+    #nodeViewMenu, #katReplMenu {
+      display: flex;
+      flex-direction: row;
+      align-items: stretch;
+      gap: .3em }
+    [data-section="nodeView"] #katRepl,
+    [data-section="nodeView"] #katReplMenu,
+    [data-section="katRepl"] #nodeView,
+    [data-section="katRepl"] #nodeViewMenu { display: none }
+  menu {
+    background: #455d7a;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-flow: column nowrap;
+    overflow: scroll }
+  #source, #log {
+    background: #233142;
+    font-family: univers;
+    font-variant-ligatures: none;
+    flex: 1 0;
+    padding: .5em }
+  #source {
+    margin: 0;
+    color: #e3e3e3;
+    outline: 0;
+    border-color: #455d7a }
+  #katRepl > *::selection { background: #455d7a }
+  #log {
+    overflow-y: auto;
+    word-break: break-all;
+    white-space: pre-wrap }
+  hr {
+    border: 0;
+    height: 0;
+    border-top: 1px solid #455d7a }
 
-@media (min-aspect-ratio: 5/4) {
-  body { flex-direction: row }
+@media (min-aspect-ratio: 3/2) {
+  section { flex-direction: row }
   svg { flex: 1 1 100vh }
-  menu { flex: 1 1 22em } }
-@media (max-aspect-ratio: 5/4) {
-  body { flex-direction: column }
+  menu { flex: 1 1 22em }
+  #source { border-width: 0 1px 0 0 } }
+@media (max-aspect-ratio: 3/2) {
+  section { flex-direction: column }
   svg { flex: 1 1 100vw }
-  menu { flex: 0 1 fit-content } }
+  menu {
+    flex: 1 0 auto;
+    max-height: 50vh }
+  #source { border-width: 0 0 1px 0 } }
+@media (max-aspect-ratio: 3/2) and (min-height: 600px) {
+  svg { order: 1 } }
+@media (max-aspect-ratio: 3/2) and (max-width: 675px) {
+  nav {
+    order: 1;
+    flex-basis: 100% } }
 
-svg > circle { stroke: forestgreen }
+svg { background: #233142 }
+svg > circle { stroke: #f95959 }
 g.label { cursor: pointer }
-g.fingers > * { stroke: #333 }
-marker > path { fill: #333 }
-
-@media (prefers-color-scheme: dark) {
-  body { color: #ccc }
-  svg { background: #222 }
-  menu { background: midnightblue }
-  svg > circle { stroke: darkgreen }
-  g.fingers > * { stroke: #aaa }
-  marker > path { fill: #aaa } }
+g.fingers > * { stroke: #e3e3e3 }
+marker > path { fill: #e3e3e3 }

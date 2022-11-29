@@ -37,13 +37,31 @@ class Transaction {
   async run (state) {
     tell.log.call(peer, "RUNNING TX", this, state)
     const { usedCompUnitsTotal, memory, accountData } = state.getAccount(this.to),
-          { result, usedCompUnits } = await new Interpreter(memory).run(accountData);
-    tell.log.call(peer, "PROGRAM RESULT", result.value);
-    if (usedCompUnitsTotal + usedCompUnits < Infinity) result.commit(state);
+          { result, usedCompUnits } = await new Interpreter(memory).run(accountData);  // Use loaded programData?
+    if ("err" in result) tell.log.call(peer, "PROGRAM RESULT: ERROR\n", result.err);
+    else {
+      const s = result.data.toString();
+      tell.log.call(peer, "PROGRAM RESULT", "\nTerm:", s.term, "\nType:", s.type,
+        "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.flatMap(ms => ["\n", ms]));
+      if (usedCompUnitsTotal + usedCompUnits < Infinity) {
+        result.commit(state);
+        this.data.result = s;
+        this.data.args = []
+      }
+    }
   }
-  createAccount (state) {
-    const { address, codeHash, ...accountData } = this.data.account;
-    state.putAccount(codeHash ? codeHash : address, accountData)
+  async createAccount (state) {
+    tell.log.call(peer, "CREATING PROGRAM", this, state)
+    const { address, codeHash, ...accountData } = this.data.account,
+          memory = new WebAssembly.Memory({ initial: 1, maximum: 1 }),
+          { result, usedCompUnits } = await new Interpreter(memory).run({ address: codeHash ? codeHash : address, ...accountData });
+    if ("err" in result) tell.log.call(peer, "PROGRAM RESULT: ERROR\n", result.err);
+    else {
+      const s = result.data.toString();
+      tell.log.call(peer, "PROGRAM RESULT", "\nTerm:", s.term, "\nType:", s.type,
+        "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.flatMap(ms => ["\n", ms]));
+      if (usedCompUnits < Infinity) result.commit(state);
+    }
   }
   static async verifyTx(tx) { return await Utils.verifySig(tx.from, tx.sig, await Utils.hash(JSON.stringify(tx.data))) }
 }
@@ -68,15 +86,15 @@ class Block {
   constructor ({ timestamp, lastHash, hash, data, proposer, sig, seqNo } = {}) {
     Object.assign(this, { timestamp, lastHash, hash, data, proposer, sig, seqNo })
   }
-  async run (state) {  // TODO: txs run by randomly nominated nodes?
+  async run (state) {  // TODO: txs evaluated by consensus on randomly nominated nodes?
     tell.debug.call(peer, "block run", this.data);
     for (const tx of this.data) switch (tx.data.type) {
       case "transact": await new Transaction(tx).run(state); break;
-      case "createAccount": new Transaction(tx).createAccount(state)
+      case "createAccount": await new Transaction(tx).createAccount(state)
     }
   }
   static async base () { return new this({
-    timestamp: peer.appStart, lastHash: "", hash: await this.hash(peer.appStart, "", ""), data: [], proposer: "0".repeat(240), sig: "", seqNo: 0
+    timestamp: peer.baseTime, lastHash: "", hash: await this.hash(peer.baseTime, "", ""), data: [], proposer: "0".repeat(240), sig: "", seqNo: 0
   }) }
   static async next (lastBlock, data, account) {
     const timestamp = Date.now(), lastHash = lastBlock.hash,
@@ -172,10 +190,10 @@ class Blockchain {
     this.state = state;
     return this
   }
-  appendBlock (block) {
+  async appendBlock (block) {
     tell.log.call(peer, "NEW BLOCK APPENDED TO CHAIN");
     this.chain.push(block);
-    new Block(block).run(this.state);
+    await new Block(block).run(this.state);
     return block
   }
   async makeBlock (txs, account) { return await Block.next(this.chain.at(-1), txs, account) }
@@ -200,11 +218,11 @@ class Blockchain {
       return false
     }
   }
-  addUpdatedBlock (hash, blockPool, preparePool, commitPool) {
+  async addUpdatedBlock (hash, blockPool, preparePool, commitPool) {
     const block = blockPool.getBlock(hash);
     block.prepareMsgs = preparePool.list[hash];
     block.commitMsgs = commitPool.list[hash];
-    this.appendBlock(block)
+    await this.appendBlock(block)
   }
 }
 
@@ -214,19 +232,21 @@ class Blockchain {
 class Interpreter {
   constructor (memory) { this.memory = memory }
   async run (account) {
-    let term, type, ctx, err;
+    const self = this;
+    let data, err, wasm;
     try {
-      const { normalForm } = await VM().import({ code: account.code, memory: this.memory });
-      ({ term, type, ctx } = await normalForm.run());
+      const { returnAll } = await VM().import({ code: account.code, memory: this.memory });
+      data = await returnAll.run();
     } catch (e) { err = e.message }
-    tell.debug.call(peer, "interpreter result", ...(err ? ["\n", err] : [term.toString(ctx), type.toString(ctx)]));
     return {
       result: {
-        value: err ? { err } : { term: term.toString(ctx), type: type.toString(ctx) },
+        ...(err ? { err } : { data }),
         commit (state) {
           const { address, codeHash, ...accountData } = account;
-          state.putAccount(address, accountData)
+          state.putAccount(address, accountData, self.memory, data)
         }
+        // emitWasm (data) { wasm = x },
+        // runWasm (data) { self.memory = x }
       },
       usedCompUnits: 0
     }
@@ -235,15 +255,17 @@ class Interpreter {
 
 class State {
   obj = {};
-  putAccount (address, accountData) { this.obj[address] = {
+  putAccount (address, accountData, memory, programData) { this.obj[address] = {
     accountData,
+    programData,  // Ephemeral
     usedCompUnitsTotal: 0,
-    memory: new WebAssembly.Memory({ initial: 1, maximum: 1 })
+    memory
   } }
   getAccount (address) { return this.obj[address] }
 }
 
 
+// Blockchain state, events and messaging
 
 var chain = new $.Machine({
       account: null,
@@ -258,13 +280,13 @@ $.targets({
   async init () {
     const state = new State();
     this.account = await new Account().init();
-    this.blockchain = await new Blockchain().init(state)
+    this.blockchain = await new Blockchain().init(state);
+    postMessage({ type: "info-blockappend", data: { block: this.blockchain.chain[0] } })
   },
   txs () { return this.txpool.txs },
   blocks () { return this.blockchain.chain },
   async transact ({ code, to }) {
     const tx = await this.account.createTx({ code, to });
-    this.txpool.addTx(tx);
     peer.emit("broadcast", "tx", { tx });
     return tx
   }

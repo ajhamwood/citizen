@@ -1,0 +1,254 @@
+/* Peer UI styling */
+
+.wc-peer {
+  display: flex;
+  flex-flow: column nowrap;
+  gap: .3em;
+  width: calc(100% - 1em);
+  padding: .5em;
+  margin-bottom: -.5em }
+  .wc-peer:not(.pseudofocus) { cursor: cell }
+  .wc-peer.pseudofocus {
+    margin: .5em 0 0 0;
+    background: #fff2 }
+  .wc-peer.pseudofocus *::selection { background: #455d7a }
+  .wc-peer:not(.pseudofocus) *, header { user-select: none }
+  .wc-peer.pseudofocus:first-child { margin-top: 0 }
+    .wc-peer > * {
+      display: grid;
+      grid-template-columns: 6em 3em 7em auto min-content;
+      align-items: baseline;
+      row-gap: .3em }
+    .wc-peer input[type="text"]:focus::placeholder,
+    .wc-peer textarea:focus::placeholder { color: transparent }
+    .wc-peer .ellipsis {
+      font: 1rem univers;
+      font-variant-ligatures: none;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      white-space: nowrap }
+    .wc-peer *::before, .wc-peer *::after { font-family: literata }
+    .chord-peer {
+      grid-template-columns: min-content auto repeat(3, min-content);
+      align-items: baseline;
+      column-gap: .3em }
+      .peer-addr { margin-right: -.3em }
+      .peer-id, .blockchain-hash { width: 100% }
+      .peer-id:not(:empty)::before {
+        content: ": " }
+      [data-proposer] .pbft-proposer::before { content: "<proposer>" }
+      .pbft-phase-top:not(:empty)::before { content: "<" }
+      .pbft-phase-top:not(:empty)::after { content: ">" }
+      .wc-peer.pseudofocus .pbft-phase-top { display: none }
+      .chord-interact {
+        display: flex;
+        flex-flow: row nowrap;
+        gap: .3em }
+        .chord-addr { width: 4em }
+    .wc-peer.pseudofocus > .chord-peer { grid-template-columns: min-content auto repeat(2, min-content) }
+    .wc-peer:not(.pseudofocus) > :not(.chord-peer) { display: none }
+      .chord-finger-list:empty::before,
+      .bucket-hash:empty::before,
+      .bucket-dump-hash.confirmed:empty::before,
+      .pbft-phase:empty::before,
+      .blockchain-txlist:empty::before,
+      .smart-contract-appliedargs:empty::before {
+        content: "No data";
+        color: #fff6 }
+        .chord-finger-rank::before { content: "Rank " }
+        .chord-finger-rank::after { content: " @" }
+        .chord-finger-addr::before { content: "Addr=" }
+      .bucket-hash { grid-column-end: span 2 }
+        .bucket-hash-entry {
+          display: grid;
+          grid-template-columns: 1fr minmax(min-content, 1fr) }
+          .bucket-hash-value::before { content: "→ " }
+      .bucket-operations {
+        display: grid;
+        grid-column-end: span 5;
+        grid-template-rows: repeat(5, min-content);
+        row-gap: .3em }
+        .bucket-operation {
+          display: grid;
+          grid-template-columns: 5.5em 4em minmax(4em, 1fr) minmax(2em, 4fr) 1em;
+          grid-template-rows: subgrid;
+          column-gap: .5em;
+          align-items: stretch }
+          .bucket-operation > :first-child { grid-column-start: 2 }
+          .bucket-operation > .button { justify-self: start }
+          .bucket-confirmed.check::before { content: "✓" }
+          .bucket-show-value, .bucket-confirmed { align-self: center }
+          .bucket-dump-hash { grid-column-end: span 2 }
+      .pbft-phase::before {
+        content: "Phase: ";
+        white-space: normal }
+      .pbft-phase:empty::before { content: "Not joined" }
+      .pbft-requirement::before { content: "Votes needed: " }
+      [data-phase="collect"] > .pbft-requirement::before { content: "Tx needed: " }
+      .pbft-collection {
+        grid-column: 2 / span 4;
+        counter-reset: pbft-txlist -1 }
+        .pbft-transaction, .pbft-block {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          position: relative;
+          counter-increment: pbft-txlist }
+        .pbft-transaction::before {
+          content: "tx" counter(pbft-txlist) ":";
+          position: absolute;
+          right: calc(100% + .3em) }
+        .pbft-block::before {
+          content: "prop" counter(pbft-txlist) ":";
+          position: absolute;
+          right: calc(100% + .3em) }
+          .pbft-txid::before { content: "Txid: " }
+          .pbft-txfrom::before { content: "From: " }
+          .pbft-blockhash::before { content: "Hash: " }
+          .pbft-message::before { content: "Message: " }
+          .pbft-data:not([data-phase="roundchange"]) .pbft-message { display: none }
+          .pbft-message { grid-column-end: span 2 }
+          .pbft-votesreceived::before { content: "Votes: " }
+          [data-phase="preprepare"] .pbft-requirement,
+          [data-phase="preprepare"] .pbft-votesreceived { display: none }
+          [data-phase="preprepare"] .pbft-blockhash { grid-column-end: span 2 }
+      .align > :nth-child(2) { grid-column-end: span 2 }
+      .blockchain-hash { grid-column-end: span 2 }
+      .blockchain-txlist {
+        grid-column: 2 / span 4;
+        counter-reset: blockchain-txlist -1 }
+      .pbft-data:not([data-phase]) + * > .blockchain-hash,
+      .pbft-data:not([data-phase]) + * > .blockchain-timestamp { display: none }
+      .pbft-data:not([data-phase]) + * > .blockchain-txlist { grid-column-start: 3 }
+      .pbft-data:not([data-phase]) + * > .blockchain-txlist::before { content: "Not joined" }
+      .pbft-phase-top, .pbft-phase, .blockchain-timestamp { white-space: pre }
+      .blockchain-txlist:empty::before { content: "No transactions listed" }
+      .blockchain-txlist:not(:empty) { padding-top: .3em }
+        .blockchain-transaction {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          grid-gap: .2em;
+          position: relative;
+          counter-increment: blockchain-txlist }
+        .blockchain-transaction::before {
+          content: "tx" counter(blockchain-txlist) ":";
+          position: absolute;
+          right: calc(100% + .3em) }
+        .blockchain-transaction.pseudofocus {
+          background: #0002;
+          padding: .3em;
+          top: -.3em;
+          left: -.3em }
+        .blockchain-transaction.pseudofocus::before { top: .3em }
+          .blockchain-txcode {
+            font-family: univers;
+            font-variant-ligatures: none;
+            display: flex;
+            flex-flow: column }
+          .blockchain-txcode > * {
+            font-size: small;
+            background: #0002;
+            padding: .5em }
+          [data-type="createAccount"] > .blockchain-txto { display: none }
+          .blockchain-txid::before { content: "Txid: " }
+          .blockchain-txfrom::before { content: "From: " }
+          .blockchain-txtype::before { content: "Type: " }
+          .blockchain-txto:not(:empty)::before { content: "To: " }
+          .blockchain-txcode::before { content: "Code: " }
+          .blockchain-txcode::after { content: "[expand]"  }
+          .blockchain-transaction.pseudofocus > .blockchain-txcode::after { display: none }
+          .blockchain-transaction:not(.pseudofocus) > .blockchain-txcode {
+            cursor: pointer;
+            flex-flow: row;
+            gap: .2em; }
+          .blockchain-transaction:not(.pseudofocus) > .blockchain-txcode > * { display: none }
+          .blockchain-transaction.pseudofocus >
+            .blockchain-txcode:not(:empty) {
+              grid-column: 1 / 3;
+              height: 10em;
+              overflow: scroll }
+          .blockchain-transaction.pseudofocus >
+            .blockchain-txcode:not(:empty)::before {
+              content: "Code:\a";
+              white-space: pre-wrap }
+          .blockchain-transaction.pseudofocus >
+            .blockchain-txcode:not(:empty)::after { display: none }
+          .blockchain-transaction > .smart-contract-codeview {
+            justify-self: start;
+            align-self: end }
+          .blockchain-transaction[data-type="transact"]:not(.pseudofocus) .smart-contract-coderaw,
+          .blockchain-transaction > .smart-contract-codeview,
+          .blockchain-transaction .smart-contract-appliedargs { display: none }
+          .blockchain-transaction[data-type="createAccount"].pseudofocus >
+            .smart-contract-codeview { display: flex }
+          .blockchain-transaction[data-type="transact"].pseudofocus
+            .smart-contract-appliedargs { display: inline }
+          .smart-contract-appliedargs:empty::before { content: "No args applied" }
+      .smart-contract-transactions {
+        display: grid;
+        grid-column-end: span 3;
+        grid-template-rows: repeat(2, min-content);
+        row-gap: .3em;
+        width: 100%;
+        grid-template-columns: 4.5em auto }
+      .smart-contract-transaction {
+        display: grid;
+        grid-template-columns: subgrid;
+        grid-template-rows: subgrid;
+        grid-column: 1 / span 3;
+        grid-row-end: span 2;
+        align-items: stretch;
+        grid-gap: .3em }
+      .smart-contract-transaction.pseudofocus { grid-row-end: span 3 }
+        .smart-contract-transaction > .button {
+          justify-self: start;
+          align-self: start }
+        .smart-contract-codeinput {
+          resize: none;
+          outline: none;
+          height: 1em;
+          background: #0002;
+          color: #e3e3e3;
+          font-family: univers;
+          font-variant-ligatures: none;
+          border: 1px solid #0007;
+          padding: .2em .2em .3em;
+          grid-column-end: span 2 }
+        .smart-contract-codeinput::selection { background: #233142 }
+        .smart-contract-transaction.pseudofocus > .smart-contract-codeinput {
+          grid-column: 1 / 3;
+          grid-row: 2;
+          height: 10em }
+        .smart-contract-transaction:not(.pseudofocus) > .smart-contract-arginputs { display: none }
+        .smart-contract-transaction:not(.pseudofocus) > .smart-contract-codeview { display: none }
+        .smart-contract-args::before {
+          content: "Args";
+          font: inherit }
+        .smart-contract-transaction.pseudofocus > .smart-contract-args::before { content: "Add arg" }
+        .smart-contract-codelisting {
+          grid-column: 1 / span 3;
+          grid-row-start: 2;
+          height: 10em;
+          overflow: scroll }
+        .smart-contract-codeinput::selection { background: #233142 }
+        .smart-contract-transaction:not(.pseudofocus)
+          .smart-contract-codelisting { display: none }
+        .smart-contract-transaction.pseudofocus > .smart-contract-codelisting { grid-row-start: 3 }
+        [data-codeview="raw"] .smart-contract-programvalue,
+        [data-codeview="raw"] .smart-contract-programcontexts,
+        [data-codeview="evaluated"] .smart-contract-coderaw { display: none }
+          .smart-contract-codelisting > * {
+            background: #0002;
+            padding: .5em }
+          .smart-contract-programcontexts { margin-top: .5em }
+          .smart-contract-coderaw, .smart-contract-programvalue > *,
+            .smart-contract-elab, .smart-contract-metacontext > * {
+            font: small univers;
+            font-variant-ligatures: none;
+            white-space: pre-wrap }
+            .smart-contract-programcontexts > hr { border-top: 1px solid #e3e3e3 }
+            .smart-contract-programvalue > *::before { font: inherit }
+            .smart-contract-term::before { content: "Term: " }
+            .smart-contract-type::before { content: "Type: " }
+  .peer-createnode {
+    align-self: flex-start;
+    margin: .5em }

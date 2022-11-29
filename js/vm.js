@@ -1,3 +1,5 @@
+// Interpreter for dependent type theory with implicit arguments
+
 function VM (options = {}) {
   let { debug = { showPhase: false } } = options, phase = null;
   debug = (debugOpts => new Proxy(function () {}, { get ({}, prop) {
@@ -513,6 +515,16 @@ function VM (options = {}) {
           return this.doElab({ rterm })
             .then(({ ctx, term }) => ({ ctx, term, metas: Array.from(globalContext.metas).map(([ mvar, soln ]) =>
               new MetaEntry({ mvar, soln: soln === null ? soln : this.quote({ ctx, lvl: 0, val: soln }) })) })) },
+        returnAll ({ data: rterm }) {
+          debug.log()("Full expression data:");
+          return this.doElab({ rterm })
+            .then(({ ctx, term, vtype }) => new Return ({ ctx,
+              term: this.quote({ ctx, lvl: 0, val: this.eval({ ctx, term, env: [] }) }),
+              type: this.quote({ ctx, lvl: 0, val: vtype }),
+              elab: term,
+              metas: Array.from(globalContext.metas).map(([ mvar, soln ]) =>
+                new MetaEntry({ mvar, soln: soln === null ? soln : this.quote({ ctx, lvl: 0, val: soln }) })) }))
+        },
         displayError ({ msg }, err) {
           let lines = ctx.source.split(/\r\n?|\n/);
           return err({ message: `${msg}\n${lines[globalContext.pos[0][0] - 1]}\n${"-".repeat(globalContext.pos[0][1] - 1)}${
@@ -520,6 +532,16 @@ function VM (options = {}) {
       })) this[k] = debug(["normalForm", "typecheck", "elaborate"].includes(k) ?
         function (...args) { phase = "evaluator"; return fn.apply(this, args) } : fn, k, this)
     }
+  }
+
+  class Return {
+    constructor ({ ctx, term, type, elab, metas }) { Object.assign(this, { ctx, term, type, elab, metas }) }
+    toString () { return {
+      term: this.term.toString(this.ctx),
+      type: this.type.toString(this.ctx),
+      elab: this.elab.toString(this.ctx),
+      metas: this.metas.map(meta => meta.toString(this.ctx))
+    } }
   }
 
   const parseVMCode = new Parser(),
@@ -536,7 +558,8 @@ function VM (options = {}) {
       })).then(src => ({
         normalForm: { run: () => parseVMCode(src).then(evaluateVMProgram.normalForm).toPromise() },
         typecheck: { run: () => parseVMCode(src).then(evaluateVMProgram.typecheck).toPromise() },
-        elaborate: { run: () => parseVMCode(src).then(evaluateVMProgram.elaborate).toPromise() }
+        elaborate: { run: () => parseVMCode(src).then(evaluateVMProgram.elaborate).toPromise() },
+        returnAll: { run: () => parseVMCode(src).then(evaluateVMProgram.returnAll).toPromise() }
       }))
     } }
   })

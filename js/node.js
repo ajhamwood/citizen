@@ -1,9 +1,12 @@
 importScripts("./machine.js");
 importScripts("./blockchain.js");
-importScripts("./trie.js");
+// importScripts("./trie.js");
 importScripts("./vm.js");
 
-function getTime () { let d = performance.now();
+
+// Logging, crypto, async, and other utilities
+
+function getTime () { let d = performance.now() + peer.relTime;
   return String(d < 0 ? 1e7 + d : d).padStart(7, '0') }
 const tell = new Proxy({}, { get ({}, prop) {
         if (logLevels[prop]) return function (event, ...args) {
@@ -12,13 +15,20 @@ const tell = new Proxy({}, { get ({}, prop) {
         };
         else return () => {}
       } }),
-      logLevels = { error: true, warn: true, log: true, info: true, debug: true },
+      logLevels = { error: true, warn: true, log: true, info: false, debug: false },
       logColours = { debug: "lightseagreen", info: "lightseagreen", log: "tomato", warn: "tomato", error: "tomato" };
 
 const MIN_SUCC_LENGTH = 1,
       FINGER_LENGTH = 160,
 
       MAX_ID = 2n ** BigInt(FINGER_LENGTH);
+
+function isBetween (low, el, high) {  // True if low === high and both !== el
+  return low < high ? low < el && el < high : low < el || el < high
+}
+function isStrictlyBetween (low, el, high) {  // Always false if low === high
+  return low < high ? low < el && el < high : low > high ? low < el || el < high : false
+}
 
 const toSHA1 = async msg => new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(msg))),
       toBuf = (bn, len = 0) => {
@@ -33,6 +43,59 @@ const toSHA1 = async msg => new Uint8Array(await crypto.subtle.digest("SHA-1", n
       fingerJust = ar => ar.reduce((acc, addr, rank) => typeof addr === "undefined" ? acc : Object.assign(acc, { [rank]: addr }), {}),
       keyToId = async k => fromBuf(await toSHA1(k)).toString(16).padStart(40, "0"),
       addrExists = async k => (txf => ~[...peer.addrList].findIndex(([, id]) => txf === id))(await keyToId(k));
+
+const resetResolveSeq = queues =>
+        (name, ord, promfunc = Promise.resolve.bind(Promise)) =>
+          (queues[name] ??=
+            ((proms, rslvs, prom2s, rslv2s) => { const
+              queue = {
+                get: i => proms[i] ??= new Promise(r => rslvs[i] = r),
+                set: (i, pf) => {
+                  queue.get(i);
+                  rslvs[i](pf);
+                  if (i in prom2s) iter(i);
+                  return prom2s[i] ??= new Promise(r => rslv2s[i] = r);
+                }
+              }, iter = async (i, v) => {
+                do {
+                  v = await (await queue.get(i))(v);
+                  rslv2s[i](v)
+                } while (++i)
+              };
+              iter(0);
+              return queue
+            })({}, {}, {}, {})
+          ).set(ord, promfunc);
+let resolveSeq;
+function resetVotingResolvers () {
+  resolveSeq = resetResolveSeq({});
+  peer.votingAwait = null;
+  [ "preprepare", "prepare", "commit", "roundchange" ]
+    .forEach(phase => resolveSeq(phase, 1, v => new Promise(r => {
+      tell.debug.call(peer, "resolving", phase, v);
+      informVote(phase, v);
+      r(v)
+    })))
+}
+
+function informVote (phase, v) {
+  let data = { phase };
+  data.limit = minApprovals()
+  if (phase === "preprepare") {
+    data.newProposer = chain.blockchain.getProposer();
+    data.limit = 1
+  }
+  switch (phase) {
+    case "preprepare": if (typeof v !== "undefined") data.block = v; break;
+    case "prepare": data.prepare = v; break;
+    case "commit": data.commit = v; break;
+    case "roundchange": data.msg = v
+  }
+  postMessage({ type: "info-phase", data });
+}
+
+
+// Chord stabilisation
 
 const fixFinger = (i => async function ffcl (reset) {
         if (i >= FINGER_LENGTH || reset) i = 0;
@@ -90,18 +153,16 @@ const maintenance = (timeout => ({
         }
       }))();
 
-function isBetween (low, el, high) {  // True if low === high and both !== el
-  return low < high ? low < el && el < high : low < el || el < high
-}
-function isStrictlyBetween (low, el, high) {  // Always false if low === high
-  return low < high ? low < el && el < high : low > high ? low < el || el < high : false
-}
+
+// Peer state, events and messaging
 
 var peer = new $.Machine ({
-      appStart: null,
+      baseTime: null,
+      relTime: null,
 
       // Chord properties
       mtTime: 500,
+      listeningAwait: null,
 
       addr: undefined,
       id: undefined,
@@ -115,7 +176,7 @@ var peer = new $.Machine ({
 
       // pBFT properties
       addrList: new Map(),
-      resolvers: {}
+      votingAwait: null
     });
 
 $.targets({
@@ -123,12 +184,12 @@ $.targets({
     let { data, sender, type, target, uuid } = e.data;
     tell.info.call(peer, "MESSAGE", ...Object.entries(e.data).flatMap(([k, v], i) => (i ? [","] : []).concat([k + ":", v])))
     switch (type) {
-      case "start": $.pipe("waitForInit", () => peer.emitAsync("init", data.appStart)); break;
+      case "start": $.pipe("waitForInit", () => peer.emitAsync("init", data)); break;
       case "request":
       case "response": peer.emit("respond", data, sender, type); break;
 
       case "doListen": $.pipe("waitForInit", () => peer.emitAsync("listen", target)).then(() => postMessage({ type: "info-listen" })); break;
-      case "doJoin": peer.emitAsync("join", target).then(() => postMessage({ type: "info-join" })); break;
+      case "doJoin": peer.emitAsync("join", target).then(() => postMessage({ type: "info-join", data: { limit: TX_THRESHHOLD } })); break;
       case "doClose": peer.emitAsync("close").then(() => postMessage({ type: "info-close" })); break;
 
       case "doGet": peer.emitAsync("get", data.key)
@@ -142,6 +203,15 @@ $.targets({
       case "doDump": peer.emitAsync("dump", data.addr)
         .then(({ dump: { entries, error } }) => postMessage({ type: "info-bucket", data: { action: "doDump", result: { entries } }, uuid })); break;
 
+      case "votingAwait": 
+        peer.votingAwait = {};
+        ["preprepare", "prepare", "commit", "roundchange"].forEach(phase =>
+          Object.assign(peer.votingAwait[phase] = {}, { promise: new Promise(r => peer.votingAwait[phase].resolve = r) })); break;
+      case "goPreprepare": peer.votingAwait.preprepare.resolve(); break;
+      case "goPrepare": peer.votingAwait.prepare.resolve(); break;
+      case "goCommit": peer.votingAwait.commit.resolve(); break;
+      case "goRoundchange": peer.votingAwait.roundchange.resolve(); break;
+
       case "doBroadcastTx": await chain.emitAsync("transact", data)
     }
   },
@@ -149,8 +219,12 @@ $.targets({
 
     // Chord
 
-    async init (appStart) {
-      this.appStart = appStart;
+    async init ({ baseTime, relTime }) {
+      let resInit;
+      $.pipe("init", () => new Promise(r => resInit = r));
+      $.pipe("listen", () => new Promise(r => this.listeningAwait = r));
+      this.baseTime = baseTime;
+      this.relTime = relTime;
 
       //Bucket
       this.on("join", target => {
@@ -163,7 +237,7 @@ $.targets({
       this.id = await keyToId(chain.account.pubKey);
       tell.log.call(this, "node created", this.id);
       postMessage({ type: "info-id", data: { id: this.id } });
-      ["prepare", "commit", "roundchange"].forEach(phase => $.pipe(phase, () => new Promise(r => this.resolvers[phase] = p => p.then(v => (r(), v)))));
+      resInit()
     },
 
     async wait (action, target, data = {}) {
@@ -192,12 +266,14 @@ $.targets({
     },
 
     async listen (ix) {
+      await $.pipe("init");
       this.addr = ix;
       tell.debug.call(this, "listen");
       this.addrList.set(ix, this.id);
       this.succ.fill([this.addr, this.id]);
       tell.log.call(this, "LISTENING");
-      maintenance.start.call(this, true)
+      maintenance.start.call(this, true);
+      this.listeningAwait()
     },
     close () {
       maintenance.stop.call(this);
@@ -226,8 +302,9 @@ $.targets({
           .then(({ wait }) => ({ ...wait, addr: target }))
     },
 
-    async join (target) {
+    async join (target) {  // TODO: make joins atomic
       tell.debug.call(this, "join", this.state(), target);
+      await $.pipe("listen");
       if (typeof this.addr === "undefined" || typeof this.succ[0] === "undefined") throw new Error();
       if (this.addr !== this.succ[0][0]) {console.warn("already joined?", structuredClone(this.state())); throw new Error("Already joined");}
       if (target === this.addr) throw new Error("Cannot join self");
@@ -255,6 +332,9 @@ $.targets({
             this.emit("join", this.succ[0])  // Test against partition, the reason this is supposed to be here
           }
         });
+
+        resetVotingResolvers();
+
         return { succ: this.succ }
       } catch (e) { tell.debug.call(this, "join err", e) }
       finally { maintenance.start.call(this) }
@@ -312,8 +392,10 @@ $.targets({
       //   if (typeof oldPred !== "undefined" && oldPred !== this.addr) this.emit("pred::down", oldPred);
       //   if (this.pred !== this.addr) this.emit("pred::up", this.pred)
       // }
-      if (this.addr === oldPred?.[0] && this.pred?.[0] !== oldPred?.[0])
-        postMessage({ type: "info-join" });
+      if (this.addr === oldPred?.[0] && this.pred?.[0] !== oldPred?.[0]) {
+        postMessage({ type: "info-join", data: { limit: TX_THRESHHOLD } });
+        resetVotingResolvers();
+      }
       this.emit("notify", sender)
     },
 
@@ -479,58 +561,68 @@ $.targets({
         if (chain.txpool.addTx(tx)) {
           tell.log.call(this, "TX THRESHHOLD REACHED");
           if (chain.blockchain.getProposer() === await keyToId(chain.account.pubKey)) {  // What happens if nodes.length changes as the last tx is being broadcast?
-            const block = await chain.blockchain.makeBlock(chain.txpool.txs, chain.account);
+            const block = await resolveSeq("preprepare", 0, () => chain.blockchain.makeBlock(chain.txpool.txs, chain.account));
             tell.log.call(this, "BLOCK CREATED", block);
             this.emit("broadcast", "preprepare", { block })
-          }
+          } else resolveSeq("preprepare", 0);
         } else tell.log.call(this, "Transaction added", tx.data, tx.id);
+        postMessage({ type: "info-phase", data: { phase: "collect", limit: TX_THRESHHOLD, tx } });
         return false
       } else return true
     },
 
-    async preprepare (block) {
+    async preprepare (block) {  // Arrives once per round
       tell.debug.call(this, "preprepare", block);
+      await resolveSeq("preprepare", 2, () => peer.votingAwait?.preprepare.promise);
       if (chain.blockpool.blockDNE(block) && await chain.blockchain.isValidBlock(block)) {
         chain.blockpool.addBlock(block);
-        this.emit("broadcast", "prepare", { prepare: await this.resolvers.prepare(chain.preparepool.prepare(block, chain.account)) })
+        this.emit("broadcast", "prepare", { prepare: await resolveSeq("prepare", 0, () => chain.preparepool.prepare(block, chain.account)) })
         return false
       } else return true
     },
 
-    async prepare (prepare) {
-      await $.pipe("prepare");
+    async prepare (prepare) {  // Arrives n times per round
       tell.debug.call(this, "prepare", prepare);
+      await resolveSeq("prepare", 2, () => peer.votingAwait?.prepare.promise);
       if (chain.preparepool.prepareDNE(prepare) && await chain.preparepool.isValidPrepare(prepare) && await addrExists(prepare.pubKey)) {
         chain.preparepool.addPrepare(prepare);
+        informVote("prepare", prepare);
         if (chain.preparepool.list[prepare.blockHash].length >= minApprovals())
-          this.emit("broadcast", "commit", { commit: await this.resolvers.commit(chain.commitpool.commit(prepare, chain.account)) })
+          this.emit("broadcast", "commit", { commit: await resolveSeq("commit", 0, () => chain.commitpool.commit(prepare, chain.account)) })
         return false
       } else return true
     },
 
-    async commit (commit) {
-      await $.pipe("commit");
+    async commit (commit) {  // Arrives n times per round
       tell.debug.call(this, "commit", commit);
+      await resolveSeq("commit", 2, () => peer.votingAwait?.commit.promise);
       if (chain.commitpool.commitDNE(commit) && await chain.commitpool.isValidCommit(commit) && await addrExists(commit.pubKey)) {
         chain.commitpool.addCommit(commit);
+        informVote("commit", commit);
         if (chain.commitpool.list[commit.blockHash].length >= minApprovals()) {
-          chain.blockchain.addUpdatedBlock(commit.blockHash, chain.blockpool, chain.preparepool, chain.commitpool);
-          const newAddrs = chain.blockchain.chain.at(-1).data.filter(tx => tx.data.type === "createAccount").map(tx => tx.data.account.codeHash);
-          postMessage({ type: "info-createAccounts", data: { newAddrs } });
-          this.emit("broadcast", "roundchange", { msg: await this.resolvers.roundchange(chain.msgpool.createMsg(chain.blockchain.chain.at(-1).hash, chain.account)) })
+          await chain.blockchain.addUpdatedBlock(commit.blockHash, chain.blockpool, chain.preparepool, chain.commitpool);
+          postMessage({ type: "info-blockappend", data: { block: chain.blockchain.chain.at(-1) } });
+          const newAccts = chain.blockchain.chain.at(-1).data.filter(tx => tx.data.type === "createAccount").map(tx => ({
+            addr: tx.data.account.codeHash, code: tx.data.account.code,
+            result: chain.blockchain.state.getAccount(tx.data.account.codeHash).programData.toString()
+          }));
+          if (newAccts.length) postMessage({ type: "info-createAccounts", data: { newAccts } });
+          this.emit("broadcast", "roundchange", { msg: await resolveSeq("roundchange", 0, () => chain.msgpool.createMsg(chain.blockchain.chain.at(-1).hash, chain.account)) })
         }
         return false
       } else return true
     },
 
-    async roundchange (msg) {
-      await $.pipe("roundchange");
+    async roundchange (msg) {  // Arrives n times per round
       tell.debug.call(this, "roundchange", msg);
+      await resolveSeq("roundchange", 2, () => peer.votingAwait?.roundchange.promise);
       if (chain.msgpool.msgDNE(msg) && await chain.msgpool.isValidMsg(msg) && await addrExists(msg.pubKey)) {
         chain.msgpool.addMsg(msg);
+        informVote("roundchange", msg);
         if (chain.msgpool.list[msg.blockHash].length >= minApprovals()) {
-          ["prepare", "commit", "roundchange"].forEach(phase => $.pipe(phase, () => new Promise(r => this.resolvers[phase] = p => p.then(v => (r(), v)))));
-          chain.txpool.clear()
+          resetVotingResolvers();
+          chain.txpool.clear();
+          postMessage({ type: "info-phase", data: { phase: "collect", limit: TX_THRESHHOLD } })
         }
         return false
       } else return true
