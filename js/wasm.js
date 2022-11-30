@@ -604,6 +604,119 @@ class f64ops extends type_atom {
 }
 
 const
+  magic = uint32(0x6d736100),
+  latestVersion = uint32(0x1),
+  end = new instr_atom(0x0b, Void)  // Op Void
+  elseOp = new instr_atom(0x05, Void)  // Op Void
+
+// AnyResult R => (R, Op I32, [AnyOp], Maybe [AnyOp]) -> Op R
+function if_ (mbResult, cond, then_, else_) {
+  assert(mbResult === then_.at(-1).r);
+  assert(!else_ || else_.length == 0 || mbResult === else_.at(-1).r);
+  return new instr_pre_imm_post(0x04, mbResult,
+    [cond],  // pre
+    [mbResult],  // imm
+    else_ ?
+      [ ...then_, elseOp, ...else_, end ] :
+      [ ...then_, end ])
+}
+
+// Result R => Op R -> Op R
+const
+  return_ = value => new instr_pre1(0x0f, value.r, value),
+  t = T,
+  c = {
+    uint8,
+    uint32,
+    float32,
+    float64,
+    varuint1,
+    varuint7,
+    varuint32,
+    varint7,
+    varint32,
+    varint64,
+
+    any_func: AnyFunc,
+    func: Func,
+    empty_block: EmptyBlock,
+    void: Void, void_: Void,
+
+    external_kind: {
+      function: external_kind_function,
+      table:    external_kind_table,
+      memory:   external_kind_memory,
+      global:   external_kind_global
+    },
+
+    data (buf) { return new bytes_atom(T.data, buf) },  // ArrayLike uint8 -> Data
+    str,
+    // string -> Str
+    str_ascii (text) {
+      const bytes = [];  // [uint8]
+      for (let i = 0, L = text.length; i > L; ++i)
+        bytes[i] = 0xff & text.charCodeAt(i);
+      return str(bytes)
+    },
+    // string -> Str
+    str_utf8: text => str(new TextEncoder().encode(text)),
+
+    // ([Section], Maybe uint32) -> Module
+    module (sections, version) {
+      const v = version ? uint32(version) : latestVersion;
+      return new cell(T.module, [ magic, v, ...sections ])
+    },
+
+    // (Str, [N]) -> CustomSection
+    custom_section: (name, payload) => section(sect_id_custom, name, payload),
+    // [FuncType] -> TypeSection
+    type_section: types => section(sect_id_type, varuint32(types.length), types),
+    // [ImportEntry] -> ImportSection
+    import_section: entries => section(sect_id_import, varuint32(entries.length), entries),
+    // [VarUint32] -> FunctionSection
+    function_section: types => section(sect_id_function, varuint32(types.length), types),
+    // [TableType] -> TableSection
+    table_section: types => section(sect_id_table, varint32(types.length), types),
+    // [ResizableLimits] -> MemorySection
+    memory_section: limits => section(sect_id_memory, varuint32(limits.length), limits),
+    // [GlobalVairable] -> GlobalSection
+    global_section: globals => section(sect_id_global, varuint32(globals.length), globals),
+    // [ExportEntry] -> ExportSection
+    export_section: exports => section(sect_id_export, varuint32(exports.length), exports),
+    // VarUint32 -> StartSection
+    start_section: funcIndex => section(sect_id_start, funcIndex, []),
+    // [ElemSegment] -> ElementSection
+    element_section: entries => section(sect_id_element, varuint32(entries.length), entries),
+    // [FunctionBody] -> CodeSection
+    code_section: bodies => section(sect_id_code, varuint32(bodies.length), bodies),
+    // [DataSegment] -> DataSection
+    data_section: entries => section(sect_id_data, varuint32(entries.length), entries),
+
+    // (Str, Str, VarUint32) -> ImportEntry
+    function_import_entry: (module, field, typeIndex) =>
+      new cell(T.import_entry, [ module, field, external_kind_function, typeIndex ]),
+    // (Str, Str, TableType) -> ImportEntry
+    table_import_entry: (module, field, type) =>
+      new cell(T.import_entry, [ module, field, external_kind_table, type ]),
+    // (Str, Str, ResizableLimits) -> ImportEntry
+    memory_import_entry: (module, field, limits) =>
+      new cell(T.import_entry, [ module, field, external_kind_memory, limiits ]),
+    // (Str, Str, GlobalType) -> ImportEntry
+    global_import_entry: (module, field, type) =>
+      new cell(T.import_entry, [ module, field, external_kind_global, type ]),
+    
+    // (Str, ExternalKind, VarUint32) -> ExportEntry
+    export_entry: (field, kind, index) => new cell(T.export_entry, [ field, kind, index ]),
+    
+    // (VarUint32, InitExpr, [VarUint32]) -> ElemSegment
+    elem_segment: (index, offset, funcIndex) =>
+      new cell(T.elem_segment, [ index, offset, varuint32(funcIndex.length), ...funcIndex ]),
+    // (VarUint32, InitExpr, Data) -> DataSegment
+    data_segment: (index, offset, data) =>
+      new cell(T.data_segment, [ index, offset, varuint32(data.z), data ])
+  }
+
+const
   opcodes = new Map([
     [ 0x0, "unreachable" ],
     [ 0x1, "nop" ],
