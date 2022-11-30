@@ -114,7 +114,7 @@ $.targets({
 
     createNode () {
       const worker = this.closedWorkers.pop() ?? new Worker("js/node.js");
-      worker.postMessage({ type: "start", data: { baseTime: this.baseTime, relTime: performance.now() - appStart } });
+      worker.postMessage({ type: "start", data: { baseTime: this.baseTime, relTime: appStart - performance.now() } });
       const newNode = {
               worker,
               id: null,  // Virtual address

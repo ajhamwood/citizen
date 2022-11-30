@@ -1,3 +1,5 @@
+// Emit wasm
+
 class Emitter {
   constructor (buffer) {
     this.view = new DataView(this.buffer = buffer);
@@ -30,56 +32,10 @@ class Emitter {
   }
 }
 
-assert = cond => cond || tell.error.call({ addr: "WASM" }, "ASSERTION FAILURE");
-assert(false)
+assert = (cond, ...msg) => cond || tell.error.call({ addr: "WASM" }, "ASSERTION FAILURE", ...msg);
 
-class bytes_atom {
-  constructor(typeTag, arrayLike) {
-    this.t = typeTag;
-    this.z = arrayLike.length;
-    this.v = arrayLike
-  }
-  emit (e) { return e.writeBytes(this.v) }
-}
-class val_atom {
-  constructor (typeTag, uint32, v) {
-    this.t = typeTag;
-    this.z = uint32;
-    this.v = v
-  }
-}
-class bytesval_atom extends val_atom {
-  constructor (typeTag, v, bytes) {
-    super(typeTag, bytes.length, v);
-    this.bytes = bytes
-  }
-  emit (e) { return e.writeBytes(this.bytes) }
-}
-class u32_atom extends val_atom {
-  constructor (uint32) { super(T.uint32, 4, uint32) }
-  emit (e) { return e.writeU32(this.v) }
-}
-class f32_atom extends val_atom {
-  constructor (v) { super(T.float32, 4, v) }
-  emit (e) { return e.writeF32(this.v) }
-}
-class f64_atom extends val_atom {
-  constructor (v) { super(T.float64, 8, v) }
-  emit (e) { return e.writeF64(this.v) }
-}
-class u8_atom extends val_atom {
-  constructor (typeTag, v) { super(typeTag, 1, v) }
-  emit (e) { return e.writeU8(this.v) }
-}
-class type_atom extends u8_atom {
-  constructor (int7, uint8) { super(T.type, int7); this.b = uint8 }
-  emit (e) { return e.writeU8(this.b) }
-}
-class str_atom {
-  constructor (varuint32, arrayLike) {
-    assert(varuint32.v === arrayLike.length);
-  }
-}
+
+// Type tags
 
 const
   T = {
@@ -123,7 +79,531 @@ const
 
     // Must be one of 0x01 (i32), 0x02 (i64), 0x03 (f32), 0x04 (f64), 0x10 (funcref), 0x20 (func), 0x40 (void).
     typeencoding:   Symbol('typeenc')
-  },
+  };
+
+
+// Nodes
+
+const
+  // (Emitter, [Emittable]) -> Emitter
+  writev = (e, objs) => objs.reduce((e, n) => n.emit(e), e),
+  // [N] -> number
+  sumz = ns => ns.reduce((sum, { z }) => sum += z, 0),
+  // uint8 -> int7
+  readVarInt7 = byte < 64 ? byte : -(128 - byte);
+
+// bytes_atom : Atom (ArrayLike uint8)
+class bytes_atom {
+  // (TypeTag, ArrayLike uint8) -> bytes_atom
+  constructor(t, v) { this.t = t; this.z = v.length; this.v = v }
+  emit (e) { return e.writeBytes(this.v) }
+}
+
+// val_atom T : Atom T
+class val_atom {
+  // (TypeTag, uint32, T) -> val_atom T
+  constructor (t, z, v) { this.t = t; this.z = z; this.v = v }
+}
+
+// T : number, (val_atom T) (bytesval_atom T) => bytesval_atom
+class bytesval_atom extends val_atom {
+  // (TypeTag, T, ArrayLike uint8) -> bytesval_atom T
+  constructor (typeTag, v, bytes) {
+    super(typeTag, bytes.length, v);
+    this.bytes = bytes
+  }
+  emit (e) { return e.writeBytes(this.bytes) }
+}
+
+// (val_atom uint32) u32_atom => u32_atom
+class u32_atom extends val_atom {
+  // uint32 -> u32_atom
+  constructor (v) { super(T.uint32, 4, v) }
+  emit (e) { return e.writeU32(this.v) }
+}
+
+// (val_atom float32) f32_atom => f32_atom
+class f32_atom extends val_atom {
+  // number -> f32_atom
+  constructor (v) { super(T.float32, 4, v) }
+  emit (e) { return e.writeF32(this.v) }
+}
+
+// (val_atom float64) f64_atom => f64_atom
+class f64_atom extends val_atom {
+  // number -> f64_atom
+  constructor (v) { super(T.float64, 8, v) }
+  emit (e) { return e.writeF64(this.v) }
+}
+
+// T : number, (val_atom T) (u8_atom T) => u8_atom T
+class u8_atom extends val_atom {
+  // (TypeTag, T) -> u8_atom T
+  constructor (t, v) { super(t, 1, v) }
+  emit (e) { return e.writeU8(this.v) }
+}
+
+// (u8_atom int7) type_atom => type_atom
+class type_atom extends u8_atom {
+  // (int7, uint8) -> type_atom
+  constructor (v, b) { super(T.type, v); this.b = b }
+  emit (e) { return e.writeU8(this.b) }
+}
+
+// str_atom : Atom (ArrayLike uint8)
+class str_atom {
+  // (VarUint32, ArrayLike uint8) -> str_atom
+  constructor (varuint32, arrayLike) {
+    assert(varuint32.v == arrayLike.length);
+    this.t = T.str;
+    this.z = varuint32.z + arrayLike.z;
+    this.v = arrayLike;
+    this.len = varuint32
+  }
+  emit (e) { return this.len.emit(e).writeBytes(this.v) }
+}
+
+// T : N => cell T : Cell T
+class cell {
+  // (TypeTag, [T]) -> cell T
+  constructor (t, v) {
+    this.t = t;
+    this.z = sumz(v);
+    this.v = v
+  }
+  emit (e) { return writev(e, this.v) }
+}
+
+
+// Instructions
+
+// (u8_atom uint8) instr_atom : instr_atom
+class instr_atom extends u8_atom {
+  // (uint8, AnyResult) -> instr_atom
+  constructor (v, mbResult) { super(T.instr, v); this.r = mbResult }
+}
+
+// instr_cell : N
+class instr_cell {
+  // (TypeTag, uint8, AnyResult, uint32) -> instr_cell
+  constructor (t, op, mbResult, z) { this.t = t; this.z = z; this.v = op; this.r = mbResult }
+  emit (e) { return e }
+}
+
+// instr_cell instr_pre1 => instr_pre1
+class instr_pre1 extends instr_cell {
+  // (uint8, AnyResult, N) -> instr_pre1
+  constructor (op, mbResult, pre) {
+    super(T.instr_pre1, op, mbResult, 1 + pre.z);
+    this.pre = pre
+  }
+  emit (e) { return this.pre.emit(e).writeU8(this.v) }
+}
+
+// instr_cell instr_imm1 => instr_imm1
+class instr_imm1 extends instr_cell {
+  // (uint8, AnyResult, N) -> instr_imm1
+  constructor (op, mbResult, imm) {
+    super(T.instr_imm1, op, mbResult, 1 + imm.z);
+    this.imm = imm
+  }
+  emit (e) { return this.imm.emit(e.writeU8(this.v)) }
+}
+
+// instr_cell instr_pre => instr_pre
+class instr_pre extends instr_cell {
+  // (uint8, AnyResult, [N]) -> instr_pre
+  constructor (op, mbResult, pre) {
+    super(T.instr_pre, op, mbResult, 1 + sumz(pre));
+    this.pre = pre
+  }
+  emit (e) { return writev(e, this.pre).writeU8(this.v) }
+}
+
+// instr_cell instr_imm1_post => instr_imm1_post
+class instr_imm1_post extends instr_cell {
+  // (uint8, AnyResult, N, [N]) -> instr_imm1_post
+  constructor (op, mbResult, imm, post) {
+    super(T.instr_imm1_post, op, mbResult, 1 + imm.z + sumz(post));
+    this.imm = imm; this.post = post
+  }
+  emit (e) { return writev(this.imm.emit(e.writeU8(this.v)), this.post) }
+}
+
+// instr_cell instr_pre_imm => instr_pre_imm
+class instr_pre_imm extends instr_cell {
+  // (uint8, AnyResult, [N], [N])
+  constructor (op, mbResult, pre, imm) {
+    super(T.instr_pre_imm, op, mbResult, 1 + sumz(pre) + sumz(imm));
+    this.pre = pre; this.imm = imm
+  }
+  emit (e) { return writev(writev(e, this.pre).writeU8(this.v), this.imm) }
+}
+
+// instr_pre_imm_post : instr_cell
+class instr_pre_imm_post extends instr_cell {
+  // (uint8, AnyResult, [N], [N], [N])
+  constructor (op, mbResult, pre, imm, post) {
+    super(T.instr_pre_imm_post, op, mbResult, 1 + sumz(pre) + sumz(imm) + sumz(post));
+    this.pre = pre; this.imm = imm; this.post = post
+  }
+  emit (e) { return writev(writev(writev(e, this.pre).writeU8(this.v), this.imm), this.post) }
+}
+
+// R => (number, number, number -> Maybe R) -> [R]
+function maprange (start, stop, fn) {
+  let a = []  // [R]
+  while (start < stop) {
+    let v = fn(start)  // R
+    if (typeof v !== "undefined") a.push(v);
+    start++
+  }
+  return a
+}
+
+
+// Constructors
+
+const
+  uint8Cache = maprange(0, 16, v => new u8_atom(T.uint8, v)),  // [Uint8]
+  varUint7Cache = maprange(0, 16, v => new u8_atom(T.varuint7, v)),  // [VarUint7]
+  varUint32Cache = maprange(0, 16, v => new u8_atom(T.varuint32, v)),  // [VarUint7]
+  varuint1_0 = new u8_atom(T.varuint1, 0),  // Atom uint1
+  varuint1_1 = new u8_atom(T.varuint1, 1);  // Atom uint1
+function uint8 (v) { return uint8Cache[v] || new u8_atom(T.uint8, v) }  // uint8 -> Uint8
+function uint32 (v) { return new u32_atom(v) }  // uint32 -> Uint32
+function float32 (v) { return new f32_atom(v) }  // float32 -> Float32
+function float64 (v) { return new f64_atom(v) }  // float64 -> Float64
+
+// leb128-encoded integers in N bits
+// unsigned range 0 to (2 ** N) - 1
+// signed range -(2 ** (N -1)) to (2 ** (N - 1)) - 1
+function varuint1 (v) { return v ? varuint1_1 : varuint1_0 }
+
+// uint7 -> VarUint7
+function varuint7 (v) {
+  assert(v >= 0 && v <= 128);
+  return varUint7Cache[v] || new u8_atom(T.varuint7, v)
+}
+
+// uint32 -> VarUint32
+function varuint32 (value) {
+  const c = varUint32Cache[value];
+  if (c) return c;
+  assert(value >= 0 && value <= 0xffff_ffff);
+  let v = value;
+  const bytes = []  // [uint8]
+  while (v >= 0x80) {
+    bytes.push((v & 0x7f) | 0x80);
+    v >>>= 7  // Unsigned right shift
+  }
+  bytes.push(v);
+  return new bytesval_atom(T.varuint32, value, bytes)
+}
+
+// int7 -> VarInt7
+function varint7 (value) {
+  assert(value >= -64 && value <= 63);
+  return new u8_atom(T.varint7, value < 0 ? (128 + value) : value)
+}
+
+// int64 -> [uint8]
+// FIXME: "broken for values larger than uint32" - @github.com/rsms
+function encVarIntN (v) {
+  const bytes = [];  // [uint8]
+  while (true) {
+    let b = v & 0x7f;
+    if (-64 <= v && v < 64) {
+      bytes.push(b);
+      break
+    }
+    v >>= 7;  // Signed right shift
+    bytes.push(b | 0x80)
+  }
+  return bytes
+}
+
+// int32 -> VarInt32
+function varint32 (value) {
+  assert(value >= -0x8000_0000 && value <= 0x7fff_ffff);
+  return new bytesval_atom(T.varint32, value, encVarIntN(value))
+}
+
+// int64 -> VarInt64
+function varint64 (value) {
+  assert(value >= -0x8000_0000_0000_000n && value <= 0x7fff_ffff_ffff_ffffn);
+  return new bytesval_atom(T.varint64, value, encVarIntN(value))
+}
+
+
+// Language types
+const
+  AnyFunc = new type_atom(-0x10, 0x70),  // AnyFunc
+  Func = new type_atom(-0x20, 0x60),  // Func
+  EmptyBlock = new type_atom(-0x40, 0x40),  // EmptyBlock
+  Void = EmptyBlock,  // Void
+
+  external_kind_function = new u8_atom(T.external_kind, 0),  // ExternalKind
+  external_kind_table = new u8_atom(T.external_kind, 1),  // ExternalKind
+  external_kind_memory = new u8_atom(T.external_kind, 2),  // ExternalKind
+  external_kind_global = new u8_atom(T.external_kind, 3),  // ExternalKind
+
+  str = data => new str_atom(varuint32(data.length), data),  // ArrayLike uint8 -> Str
+
+  sect_id_custom = varuint7(0),
+  sect_id_type = varuint7(1),
+  sect_id_import = varuint7(2),
+  sect_id_function = varuint7(3),
+  sect_id_table = varuint7(4),
+  sect_id_memory = varuint7(5),
+  sect_id_global = varuint7(6),
+  sect_id_export = varuint7(7),
+  sect_id_start = varuint7(8),
+  sect_id_element = varuint7(9),
+  sect_id_code = varuint7(10),
+  sect_id_data = varuint7(11),
+  sect_id = {
+    custom: sect_id_custom,
+    type: sect_id_type,
+    import: sect_id_import,
+    function: sect_id_function,
+    table: sect_id_table,
+    memory: sect_id_memory,
+    global: sect_id_global,
+    export: sect_id_export,
+    start: sect_id_start,
+    element: sect_id_element,
+    code: sect_id_code,
+    data: sect_id_data,
+  };
+
+// (VarUint7, N, [N]) -> Cell N
+function section (id, imm, payload) {
+  return new cell(T.section, [id, varuint32(imm.z + sumz(payload)), imm, ...payload])
+}
+
+
+const
+  // R : Result => (OpCode, R, MemImm, Op Int) -> Op R
+  memload = (op, r, mi, addr) => new instr_pre_imm(op, r, [addr], mi),
+  // (OpCode, MemImm, Op Int, Op Result) -> Op Void
+  memstore = (op, mi, addr, v) => new instr_pre_imm(op, Void, [addr, v], mi),
+  // (uint32, uint32, number, number) -> Boolean
+  // natAl and al should be encoded as log2(bytes)  - ?? check this in reference
+  addrIsAligned = (natAl, al, offs, addr) => al <= natAl && ((addr + offs) % [1, 2, 4, 8][al]) == 0;
+
+
+// type_atom i32ops => i32ops : I32ops
+class i32ops extends type_atom {
+  // Constants
+  constv (v) { return new instr_imm1(0x41, this, v) }                           // VarInt32 -> Op I32
+  const (v) { return this.constv(varint32(v)) }                                 // int32 -> Op I32
+
+  // Memory
+  load (mi, addr) { return memload(0x28, this, mi, addr) }                      // (MemImm, Op Int) -> Op I32
+  load8_s (mi, addr) { return memload(0x2c, this, mi, addr) }                   // (MemImm, Op Int) -> Op I32
+  load8_u (mi, addr) { return memload(0x2d, this, mi, addr) }                   // (MemImm, Op Int) -> Op I32
+  load16_s (mi, addr) { return memload(0x2e, this, mi, addr) }                  // (MemImm, Op Int) -> Op I32
+  load16_u (mi, addr) { return memload(0x2f, this, mi, addr) }                  // (MemImm, Op Int) -> Op I32
+  store (mi, addr, v) { return memstore(0x36, mi, addr, v) }                    // (MemImm, Op Int, Op I32) -> Op Void
+  store8 (mi, addr, v) { return memstore(0x3a, mi, addr, v) }                   // (MemImm, Op Int, Op I32) -> Op Void
+  store16 (mi, addr, v) { return memstore(0x3b, mi, addr, v) }                  // (MemImm, Op Int, Op I32) -> Op Void
+  addrIsAligned (mi, addr) { return addrIsAligned(2, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> Boolean
+
+  // Comparison
+  eqz (a) { return new instr_pre1(0x45, this, a) }                              // Op I32 -> Op I32
+  eq (a, b) { return new instr_pre(0x46, this, [a, b]) }                        // (Op I32, Op I32) -> Op I32
+  ne (a, b) { return new instr_pre(0x47, this, [a, b]) }                        // (Op I32, Op I32) -> Op I32
+  lt_s (a, b) { return new instr_pre(0x48, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+  lt_u (a, b) { return new instr_pre(0x49, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+  gt_s (a, b) { return new instr_pre(0x4a, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+  gt_u (a, b) { return new instr_pre(0x4b, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+  le_s (a, b) { return new instr_pre(0x4c, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+  le_u (a, b) { return new instr_pre(0x4d, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+  ge_s (a, b) { return new instr_pre(0x4e, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+  ge_u (a, b) { return new instr_pre(0x4f, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+
+  // Numeric
+  clz (a) { return new instr_pre1(0x67, this, a) }                              // Op I32 -> Op I32
+  ctz (a) { return new instr_pre1(0x67, this, a) }                              // Op I32 -> Op I32
+  popcnt (a) { return new instr_pre1(0x67, this, a) }                           // Op I32 -> Op I32
+  add (a, b) { return new instr_pre(0x6a, this, [a, b]) }                       // (Op I32, Op I32) -> Op I32
+  sub (a, b) { return new instr_pre(0x6b, this, [a, b]) }                       // (Op I32, Op I32) -> Op I32
+  mul (a, b) { return new instr_pre(0x6c, this, [a, b]) }                       // (Op I32, Op I32) -> Op I32
+  div_s (a, b) { return new instr_pre(0x6d, this, [a, b]) }                     // (Op I32, Op I32) -> Op I32
+  div_u (a, b) { return new instr_pre(0x6e, this, [a, b]) }                     // (Op I32, Op I32) -> Op I32
+  rem_s (a, b) { return new instr_pre(0x6f, this, [a, b]) }                     // (Op I32, Op I32) -> Op I32
+  rem_u (a, b) { return new instr_pre(0x70, this, [a, b]) }                     // (Op I32, Op I32) -> Op I32
+  and (a, b) { return new instr_pre(0x71, this, [a, b]) }                       // (Op I32, Op I32) -> Op I32
+  or (a, b) { return new instr_pre(0x72, this, [a, b]) }                        // (Op I32, Op I32) -> Op I32
+  xor (a, b) { return new instr_pre(0x73, this, [a, b]) }                       // (Op I32, Op I32) -> Op I32
+  shl (a, b) { return new instr_pre(0x74, this, [a, b]) }                       // (Op I32, Op I32) -> Op I32
+  shr_s (a, b) { return new instr_pre(0x75, this, [a, b]) }                     // (Op I32, Op I32) -> Op I32
+  shr_u (a, b) { return new instr_pre(0x76, this, [a, b]) }                     // (Op I32, Op I32) -> Op I32
+  rotl (a, b) { return new instr_pre(0x77, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+  rotr (a, b) { return new instr_pre(0x78, this, [a, b]) }                      // (Op I32, Op I32) -> Op I32
+
+  // Conversion
+  wrap_i64 (a) { return new instr_pre1(0xa7, this, a) }                         // Op I64 -> Op I32
+  trunc_s_f32 (a) { return new instr_pre1(0xa8, this, a) }                      // Op F32 -> Op I32
+  trunc_u_f32 (a) { return new instr_pre1(0xa9, this, a) }                      // Op F32 -> Op I32
+  trunc_s_f64 (a) { return new instr_pre1(0xaa, this, a) }                      // Op F64 -> Op I32
+  trunc_u_f64 (a) { return new instr_pre1(0xab, this, a) }                      // Op F64 -> Op I32
+  reinterpret_f32 (a) { return new instr_pre1(0xbc, this, a) }                  // Op F32 -> Op I32
+}
+
+// type_atom i64ops => i64ops : I64ops
+class i64ops extends type_atom {
+  // Constants
+  constv (v) { return new instr_imm1(0x42, this, v) }                           // VarInt64 -> Op I64
+  const (v) { return this.constv(varint64(v)) }                                 // int64 -> Op I64
+
+  // Memory
+  load (mi, addr) { return memload(0x29, this, mi, addr) }                      // (MemImm, Op Int) -> Op I64
+  load8_s (mi, addr) { return memload(0x30, this, mi, addr) }                   // (MemImm, Op Int) -> Op I64
+  load8_u (mi, addr) { return memload(0x31, this, mi, addr) }                   // (MemImm, Op Int) -> Op I64
+  load16_s (mi, addr) { return memload(0x32, this, mi, addr) }                  // (MemImm, Op Int) -> Op I64
+  load16_u (mi, addr) { return memload(0x33, this, mi, addr) }                  // (MemImm, Op Int) -> Op I64
+  load32_s (mi, addr) { return memload(0x34, this, mi, addr) }                  // (MemImm, Op Int) -> Op I64
+  load32_u (mi, addr) { return memload(0x35, this, mi, addr) }                  // (MemImm, Op Int) -> Op I64
+  store (mi, addr, v) { return memstore(0x37, mi, addr, v) }                    // (MemImm, Op Int, Op I64) -> Op Void
+  store8 (mi, addr, v) { return memstore(0x3c, mi, addr, v) }                   // (MemImm, Op Int, Op I64) -> Op Void
+  store16 (mi, addr, v) { return memstore(0x3d, mi, addr, v) }                  // (MemImm, Op Int, Op I64) -> Op Void
+  store32 (mi, addr, v) { return memstore(0x3e, mi, addr, v) }                  // (MemImm, Op Int, Op I64) -> Op Void
+  addrIsAligned (mi, addr) { return addrIsAligned(3, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> Boolean
+
+  // Comparison
+  eqz (a) { return new instr_pre1(0x50, this, a) }                              // Op I64 -> Op I32
+  eq (a, b) { return new instr_pre(0x51, this, [a, b]) }                        // (Op I64, Op I64) -> Op I32
+  ne (a, b) { return new instr_pre(0x52, this, [a, b]) }                        // (Op I64, Op I64) -> Op I32
+  lt_s (a, b) { return new instr_pre(0x53, this, [a, b]) }                      // (Op I64, Op I64) -> Op I32
+  lt_u (a, b) { return new instr_pre(0x54, this, [a, b]) }                      // (Op I64, Op I64) -> Op I32
+  gt_s (a, b) { return new instr_pre(0x55, this, [a, b]) }                      // (Op I64, Op I64) -> Op I32
+  gt_u (a, b) { return new instr_pre(0x56, this, [a, b]) }                      // (Op I64, Op I64) -> Op I32
+  le_s (a, b) { return new instr_pre(0x57, this, [a, b]) }                      // (Op I64, Op I64) -> Op I32
+  le_u (a, b) { return new instr_pre(0x58, this, [a, b]) }                      // (Op I64, Op I64) -> Op I32
+  ge_s (a, b) { return new instr_pre(0x59, this, [a, b]) }                      // (Op I64, Op I64) -> Op I32
+  ge_u (a, b) { return new instr_pre(0x5a, this, [a, b]) }                      // (Op I64, Op I64) -> Op I32
+
+  // Numeric
+  clz (a) { return new instr_pre1(0x79, this, a) }                              // Op I64 -> Op I64
+  ctz (a) { return new instr_pre1(0x7a, this, a) }                              // Op I64 -> Op I64
+  popcnt (a) { return new instr_pre1(0x7b, this, a) }                           // Op I64 -> Op I64
+  add (a, b) { return new instr_pre(0x7c, this, [a, b]) }                       // (Op I64, Op I64) -> Op I64
+  sub (a, b) { return new instr_pre(0x7d, this, [a, b]) }                       // (Op I64, Op I64) -> Op I64
+  mul (a, b) { return new instr_pre(0x7e, this, [a, b]) }                       // (Op I64, Op I64) -> Op I64
+  div_s (a, b) { return new instr_pre(0x7f, this, [a, b]) }                     // (Op I64, Op I64) -> Op I64
+  div_u (a, b) { return new instr_pre(0x80, this, [a, b]) }                     // (Op I64, Op I64) -> Op I64
+  rem_s (a, b) { return new instr_pre(0x81, this, [a, b]) }                     // (Op I64, Op I64) -> Op I64
+  rem_u (a, b) { return new instr_pre(0x82, this, [a, b]) }                     // (Op I64, Op I64) -> Op I64
+  and (a, b) { return new instr_pre(0x83, this, [a, b]) }                       // (Op I64, Op I64) -> Op I64
+  or (a, b) { return new instr_pre(0x84, this, [a, b]) }                        // (Op I64, Op I64) -> Op I64
+  xor (a, b) { return new instr_pre(0x85, this, [a, b]) }                       // (Op I64, Op I64) -> Op I64
+  shl (a, b) { return new instr_pre(0x86, this, [a, b]) }                       // (Op I64, Op I64) -> Op I64
+  shr_s (a, b) { return new instr_pre(0x87, this, [a, b]) }                     // (Op I64, Op I64) -> Op I64
+  shr_u (a, b) { return new instr_pre(0x88, this, [a, b]) }                     // (Op I64, Op I64) -> Op I64
+  rotl (a, b) { return new instr_pre(0x89, this, [a, b]) }                      // (Op I64, Op I64) -> Op I64
+  rotr (a, b) { return new instr_pre(0x8a, this, [a, b]) }                      // (Op I64, Op I64) -> Op I64
+
+  // Conversion
+  extend_s_i32 (a) { return new instr_pre1(0xac, this, a) }                     // Op I32 -> Op I64
+  extend_u_i32 (a) { return new instr_pre1(0xad, this, a) }                     // Op I32 -> Op I64
+  trunc_s_f32 (a) { return new instr_pre1(0xae, this, a) }                      // Op F32 -> Op I64
+  trunc_u_f32 (a) { return new instr_pre1(0xaf, this, a) }                      // Op F32 -> Op I64
+  trunc_s_f64 (a) { return new instr_pre1(0xb0, this, a) }                      // Op F64 -> Op I64
+  trunc_u_f64 (a) { return new instr_pre1(0xb1, this, a) }                      // Op F64 -> Op I64
+  reinterpret_f64 (a) { return new instr_pre1(0xbd, this, a) }                  // Op F64 -> Op I64
+}
+
+// type_atom f32ops => f32ops : F32ops
+class f32ops extends type_atom {
+  // Constants
+  constv (v) { return new instr_imm1(0x43, this, v) }                           // Float32 -> Op F32
+  const (v) { return this.constv(float32(v)) }                                  // float32 -> Op F32
+
+  // Memory
+  load (mi, addr) { return memload(0x2a, this, mi, addr) }                      // (MemImm, Op Int) -> F32
+  store (mi, addr, v) { return memstore(0x38, mi, addr, v) }                    // (MemImm, Op Int, Op F32) -> Op Void
+  addrIsAligned (mi, addr) { return addrIsAligned(2, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> Boolean
+
+  // Comparison
+  eq (a, b) { return new instr_pre(0x5b, this, [a, b]) }                        // (Op F32, Op F32) -> Op I32
+  ne (a, b) { return new instr_pre(0x5c, this, [a, b]) }                        // (Op F32, Op F32) -> Op I32
+  lt (a, b) { return new instr_pre(0x5d, this, [a, b]) }                        // (Op F32, Op F32) -> Op I32
+  gt (a, b) { return new instr_pre(0x5e, this, [a, b]) }                        // (Op F32, Op F32) -> Op I32
+  le (a, b) { return new instr_pre(0x5f, this, [a, b]) }                        // (Op F32, Op F32) -> Op I32
+  ge (a, b) { return new instr_pre(0x60, this, [a, b]) }                        // (Op F32, Op F32) -> Op I32
+
+  // Numeric
+  abs (a) { return instr_pre1(0x8b, this, a) }                                  // Op F32 -> Op F32
+  neg (a) { return instr_pre1(0x8c, this, a) }                                  // Op F32 -> Op F32
+  ceil (a) { return instr_pre1(0x8d, this, a) }                                 // Op F32 -> Op F32
+  floor (a) { return instr_pre1(0x8e, this, a) }                                // Op F32 -> Op F32
+  trunc (a) { return instr_pre1(0x8f, this, a) }                                // Op F32 -> Op F32
+  nearest (a) { return instr_pre1(0x90, this, a) }                              // Op F32 -> Op F32
+  sqrt (a) { return instr_pre1(0x91, this, a) }                                 // Op F32 -> Op F32
+  add (a, b) { return instr_pre(0x92, this, [a, b]) }                           // (Op F32, Op F32) -> Op F32
+  sub (a, b) { return instr_pre(0x93, this, [a, b]) }                           // (Op F32, Op F32) -> Op F32
+  mul (a, b) { return instr_pre(0x94, this, [a, b]) }                           // (Op F32, Op F32) -> Op F32
+  div (a, b) { return instr_pre(0x95, this, [a, b]) }                           // (Op F32, Op F32) -> Op F32
+  min (a, b) { return instr_pre(0x96, this, [a, b]) }                           // (Op F32, Op F32) -> Op F32
+  max (a, b) { return instr_pre(0x97, this, [a, b]) }                           // (Op F32, Op F32) -> Op F32
+  copysign (a, b) { return instr_pre(0x98, this, [a, b]) }                      // (Op F32, Op F32) -> Op F32
+
+  // Conversion
+  convert_s_i32 (a) { return new instr_pre1(0xb2, this, a) }                    // Op I32 -> Op F32
+  convert_u_i32 (a) { return new instr_pre1(0xb3, this, a) }                    // Op I32 -> Op F32
+  convert_s_i64 (a) { return new instr_pre1(0xb4, this, a) }                    // Op I64 -> Op F32
+  convert_u_i64 (a) { return new instr_pre1(0xb5, this, a) }                    // Op I64 -> Op F32
+  demote_f64 (a) { return new instr_pre1(0xb6, this, a) }                       // Op F64 -> Op F32
+  reinterpret_i32 (a) { return new instr_pre1(0xbe, this, a) }                  // Op I32 -> Op F32
+}
+
+// type_atom f64ops => f64ops : F64ops
+class f64ops extends type_atom {
+  // Constants
+  constv (v) { return new instr_imm1(0x44, this, v) }                           // Float64 -> Op F64
+  const (v) { return this.constv(float64(v)) }                                  // float64 -> Op F64
+
+  // Memory
+  load (mi, addr) { return memload(0x2b, this, mi, addr) }                      // (MemImm, Op Int) -> F64
+  store (mi, addr, v) { return memstore(0x39, mi, addr, v) }                    // (MemImm, Op Int, Op F64) -> Op Void
+  addrIsAligned (mi, addr) { return addrIsAligned(3, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> Boolean
+
+  // Comparison
+  eq (a, b) { return new instr_pre(0x61, this, [a, b]) }                        // (Op F64, Op F64) -> Op I32
+  ne (a, b) { return new instr_pre(0x62, this, [a, b]) }                        // (Op F64, Op F64) -> Op I32
+  lt (a, b) { return new instr_pre(0x63, this, [a, b]) }                        // (Op F64, Op F64) -> Op I32
+  gt (a, b) { return new instr_pre(0x64, this, [a, b]) }                        // (Op F64, Op F64) -> Op I32
+  le (a, b) { return new instr_pre(0x65, this, [a, b]) }                        // (Op F64, Op F64) -> Op I32
+  ge (a, b) { return new instr_pre(0x66, this, [a, b]) }                        // (Op F64, Op F64) -> Op I32
+
+  // Numeric
+  abs (a) { return instr_pre1(0x99, this, a) }                                  // Op F64 -> Op F64
+  neg (a) { return instr_pre1(0x9a, this, a) }                                  // Op F64 -> Op F64
+  ceil (a) { return instr_pre1(0x9b, this, a) }                                 // Op F64 -> Op F64
+  floor (a) { return instr_pre1(0x9c, this, a) }                                // Op F64 -> Op F64
+  trunc (a) { return instr_pre1(0x9d, this, a) }                                // Op F64 -> Op F64
+  nearest (a) { return instr_pre1(0x9e, this, a) }                              // Op F64 -> Op F64
+  sqrt (a) { return instr_pre1(0x9f, this, a) }                                 // Op F64 -> Op F64
+  add (a, b) { return instr_pre(0xa0, this, [a, b]) }                           // (Op F64, Op F64) -> Op F64
+  sub (a, b) { return instr_pre(0xa1, this, [a, b]) }                           // (Op F64, Op F64) -> Op F64
+  mul (a, b) { return instr_pre(0xa2, this, [a, b]) }                           // (Op F64, Op F64) -> Op F64
+  div (a, b) { return instr_pre(0xa3, this, [a, b]) }                           // (Op F64, Op F64) -> Op F64
+  min (a, b) { return instr_pre(0xa4, this, [a, b]) }                           // (Op F64, Op F64) -> Op F64
+  max (a, b) { return instr_pre(0xa5, this, [a, b]) }                           // (Op F64, Op F64) -> Op F64
+  copysign (a, b) { return instr_pre(0xa6, this, [a, b]) }                      // (Op F64, Op F64) -> Op F64
+
+  // Conversion
+  convert_s_i32 (a) { return new instr_pre1(0xb7, this, a) }                    // Op I32 -> Op F64
+  convert_u_i32 (a) { return new instr_pre1(0xb8, this, a) }                    // Op I32 -> Op F64
+  convert_s_i64 (a) { return new instr_pre1(0xb9, this, a) }                    // Op I64 -> Op F64
+  convert_u_i64 (a) { return new instr_pre1(0xba, this, a) }                    // Op I64 -> Op F64
+  promote_f64 (a) { return new instr_pre1(0xbb, this, a) }                      // Op F32 -> Op F64
+  reinterpret_i64 (a) { return new instr_pre1(0xbf, this, a) }                  // Op I64 -> Op F64
+}
+
+const
   opcodes = new Map([
     [ 0x0, "unreachable" ],
     [ 0x1, "nop" ],
