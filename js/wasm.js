@@ -35,51 +35,54 @@ class Emitter {
 assert = (cond, ...msg) => cond || tell.error.call({ addr: "WASM" }, "ASSERTION FAILURE", ...msg);
 
 
+// AST
+
 // Type tags
 
-const
-  T = {
-    // Values in wasm are little-endian (except where specified otherwise)
+const T = {
+  // Atoms
+  uint8:         Symbol('u8'),
+  uint16:        Symbol('u16'),
+  uint32:        Symbol('u32'),
+  varuint1:      Symbol('vu1'),
+  varuint7:      Symbol('vu7'),
+  varuint32:     Symbol('vu32'),
+  varint7:       Symbol('vs7'),
+  varint32:      Symbol('vs32'),
+  varint64:      Symbol('vs64'),
+  float32:       Symbol('f32'), // non-standard
+  float64:       Symbol('f64'), // non-standard
+  data:          Symbol('data'), // non-standard
+  type:          Symbol('type'), // non-standard, signifies a varint7 type constant
+  external_kind: Symbol('type'),
 
-    // Values with value limits must be within the limit
-    // The size of the encoded value must be within the type's size range
-    // Variable length quantity types must follow leb128
-    // uint32 is 32 bits in 4 bytes
-    uint32:         Symbol('u32'),
-    // varuint1 is 1 bit in 1 btye
-    varuint1:       Symbol('vu1'),
-    // varuint7 is 7 bits in 1 byte
-    varuint7:       Symbol('vu7'),
-    // varuint32 is 32 bits in 1-5 bytes
-    varuint32:      Symbol('vu32'),
-    // varuint64 is 64 bits in 1-10 bytes
-    varuint64:      Symbol('vu64'),
-    // varsint7 is 7 bits in 1 byte
-    varsint7:       Symbol('vs7'),
-    // varsint32 is 32 bits in 1-5 bytes
-    varsint32:      Symbol('vs32'),
-    // varsint64 is 64 bits in 1-10 bytes
-    varsint64:      Symbol('vs64'),
-    // ieee754-2008 "binary32" in 4 bytes
-    float32:        Symbol('f32'),
-    // ieee754-2008 "binary64" in 8 bytes
-    float64:        Symbol('f64'),
+  // Instructions
+  instr:              Symbol('instr'), // non-standard
+  instr_pre:          Symbol('instr_pre'), // non-standard
+  instr_pre1:         Symbol('instr_pre1'), // non-standard
+  instr_imm1:         Symbol('instr_imm1'), // non-standard
+  instr_imm1_post:    Symbol('instr_imm1_post'), // non-standard
+  instr_pre_imm:      Symbol('instr_pre_imm'), // non-standard
+  instr_pre_imm_post: Symbol('instr_pre_imm_post'), // non-standard
 
-    // varuptr is either varuint32 or varuint64
-    varuptr:        Symbol('vptr'),
-    // memflags is varuint32, containing a bit field of the byte alignment, encoded as log2(value)
-    memflags:       Symbol('memflags'),
-    // array is a varuint32 of the number of elements, followed by that many elements of the array type
-    array:          Symbol('arr'),
-    // bytearray is an array of 8 bit bytes
-    bytearray:      Symbol('barr'),
-
-    // Identifiers must be UTF-8 decodable
-    identifier:     Symbol('ident'),
-
-    // Must be one of 0x01 (i32), 0x02 (i64), 0x03 (f32), 0x04 (f64), 0x10 (funcref), 0x20 (func), 0x40 (void).
-    typeencoding:   Symbol('typeenc')
-  };
+  // Cells
+  module:           Symbol('module'),
+  section:          Symbol('section'),
+  import_entry:     Symbol('import_entry'),
+  export_entry:     Symbol('export_entry'),
+  local_entry:      Symbol('local_entry'),
+  func_type:        Symbol('func_type'),
+  table_type:       Symbol('table_type'),
+  memory_type:      Symbol('memory_type'),
+  global_type:      Symbol('global_type'),
+  resizable_limits: Symbol('resizable_limits'),
+  global_variable:  Symbol('global_variable'),
+  init_expr:        Symbol('init_expr'),
+  elem_segment:     Symbol('elem_segment'),
+  data_segment:     Symbol('data_segment'),
+  function_body:    Symbol('function_body'),
+  str:              Symbol('str'), // non-standard
+};
 
 
 // Nodes
@@ -90,7 +93,7 @@ const
   // [N] -> number
   sumz = ns => ns.reduce((sum, { z }) => sum += z, 0),
   // uint8 -> int7
-  readVarInt7 = byte < 64 ? byte : -(128 - byte);
+  readVarInt7 = byte => byte < 64 ? byte : -(128 - byte);
 
 // bytes_atom : Atom (ArrayLike uint8)
 class bytes_atom {
@@ -153,12 +156,12 @@ class type_atom extends u8_atom {
 // str_atom : Atom (ArrayLike uint8)
 class str_atom {
   // (VarUint32, ArrayLike uint8) -> str_atom
-  constructor (varuint32, arrayLike) {
-    assert(varuint32.v == arrayLike.length);
+  constructor (len, v) {
+    assert(len.v == v.length, "len.v", len.v, "!= v.length", v.length);
     this.t = T.str;
-    this.z = varuint32.z + arrayLike.z;
-    this.v = arrayLike;
-    this.len = varuint32
+    this.z = len.z + v.length;
+    this.v = v;
+    this.len = len
   }
   emit (e) { return this.len.emit(e).writeBytes(this.v) }
 }
@@ -282,7 +285,7 @@ function varuint1 (v) { return v ? varuint1_1 : varuint1_0 }
 
 // uint7 -> VarUint7
 function varuint7 (v) {
-  assert(v >= 0 && v <= 128);
+  assert(v >= 0 && v <= 128, "v", v, "< 0 || v > 128");
   return varUint7Cache[v] || new u8_atom(T.varuint7, v)
 }
 
@@ -290,7 +293,7 @@ function varuint7 (v) {
 function varuint32 (value) {
   const c = varUint32Cache[value];
   if (c) return c;
-  assert(value >= 0 && value <= 0xffff_ffff);
+  assert(value >= 0 && value <= 0xffff_ffff, "value", value, "< 0 || value > 0xffff_ffff");
   let v = value;
   const bytes = []  // [uint8]
   while (v >= 0x80) {
@@ -303,7 +306,7 @@ function varuint32 (value) {
 
 // int7 -> VarInt7
 function varint7 (value) {
-  assert(value >= -64 && value <= 63);
+  assert(value >= -64 && value <= 63, "value", value, "< -64 || value > 63");
   return new u8_atom(T.varint7, value < 0 ? (128 + value) : value)
 }
 
@@ -325,13 +328,14 @@ function encVarIntN (v) {
 
 // int32 -> VarInt32
 function varint32 (value) {
-  assert(value >= -0x8000_0000 && value <= 0x7fff_ffff);
+  assert(value >= -0x8000_0000 && value <= 0x7fff_ffff, "value", value, "< -0x8000_0000 || value > 0x7fff_ffff");
   return new bytesval_atom(T.varint32, value, encVarIntN(value))
 }
 
 // int64 -> VarInt64
 function varint64 (value) {
-  assert(value >= -0x8000_0000_0000_000n && value <= 0x7fff_ffff_ffff_ffffn);
+  assert(value >= -0x8000_0000_0000_0000n && value <= 0x7fff_ffff_ffff_ffffn,
+    "value", value, "< -0x8000_0000_0000_0000n || value > 0x7fff_ffff_ffff_ffffn");
   return new bytesval_atom(T.varint64, value, encVarIntN(value))
 }
 
@@ -388,7 +392,7 @@ const
   memload = (op, r, mi, addr) => new instr_pre_imm(op, r, [addr], mi),
   // (OpCode, MemImm, Op Int, Op Result) -> Op Void
   memstore = (op, mi, addr, v) => new instr_pre_imm(op, Void, [addr, v], mi),
-  // (uint32, uint32, number, number) -> Boolean
+  // (uint32, uint32, number, number) -> boolean
   // natAl and al should be encoded as log2(bytes)  - ?? check this in reference
   addrIsAligned = (natAl, al, offs, addr) => al <= natAl && ((addr + offs) % [1, 2, 4, 8][al]) == 0;
 
@@ -408,7 +412,7 @@ class i32ops extends type_atom {
   store (mi, addr, v) { return memstore(0x36, mi, addr, v) }                    // (MemImm, Op Int, Op I32) -> Op Void
   store8 (mi, addr, v) { return memstore(0x3a, mi, addr, v) }                   // (MemImm, Op Int, Op I32) -> Op Void
   store16 (mi, addr, v) { return memstore(0x3b, mi, addr, v) }                  // (MemImm, Op Int, Op I32) -> Op Void
-  addrIsAligned (mi, addr) { return addrIsAligned(2, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> Boolean
+  addrIsAligned (mi, addr) { return addrIsAligned(2, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> boolean
 
   // Comparison
   eqz (a) { return new instr_pre1(0x45, this, a) }                              // Op I32 -> Op I32
@@ -470,7 +474,7 @@ class i64ops extends type_atom {
   store8 (mi, addr, v) { return memstore(0x3c, mi, addr, v) }                   // (MemImm, Op Int, Op I64) -> Op Void
   store16 (mi, addr, v) { return memstore(0x3d, mi, addr, v) }                  // (MemImm, Op Int, Op I64) -> Op Void
   store32 (mi, addr, v) { return memstore(0x3e, mi, addr, v) }                  // (MemImm, Op Int, Op I64) -> Op Void
-  addrIsAligned (mi, addr) { return addrIsAligned(3, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> Boolean
+  addrIsAligned (mi, addr) { return addrIsAligned(3, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> boolean
 
   // Comparison
   eqz (a) { return new instr_pre1(0x50, this, a) }                              // Op I64 -> Op I32
@@ -524,7 +528,7 @@ class f32ops extends type_atom {
   // Memory
   load (mi, addr) { return memload(0x2a, this, mi, addr) }                      // (MemImm, Op Int) -> F32
   store (mi, addr, v) { return memstore(0x38, mi, addr, v) }                    // (MemImm, Op Int, Op F32) -> Op Void
-  addrIsAligned (mi, addr) { return addrIsAligned(2, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> Boolean
+  addrIsAligned (mi, addr) { return addrIsAligned(2, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> boolean
 
   // Comparison
   eq (a, b) { return new instr_pre(0x5b, this, [a, b]) }                        // (Op F32, Op F32) -> Op I32
@@ -568,7 +572,7 @@ class f64ops extends type_atom {
   // Memory
   load (mi, addr) { return memload(0x2b, this, mi, addr) }                      // (MemImm, Op Int) -> F64
   store (mi, addr, v) { return memstore(0x39, mi, addr, v) }                    // (MemImm, Op Int, Op F64) -> Op Void
-  addrIsAligned (mi, addr) { return addrIsAligned(3, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> Boolean
+  addrIsAligned (mi, addr) { return addrIsAligned(3, mi[0].v, mi[1].v, addr) }  // (MemImm, number) -> boolean
 
   // Comparison
   eq (a, b) { return new instr_pre(0x61, this, [a, b]) }                        // (Op F64, Op F64) -> Op I32
@@ -606,23 +610,22 @@ class f64ops extends type_atom {
 const
   magic = uint32(0x6d736100),
   latestVersion = uint32(0x1),
-  end = new instr_atom(0x0b, Void)  // Op Void
-  elseOp = new instr_atom(0x05, Void)  // Op Void
+  end = new instr_atom(0x0b, Void),  // Op Void
+  elseOp = new instr_atom(0x05, Void),  // Op Void
 
 // AnyResult R => (R, Op I32, [AnyOp], Maybe [AnyOp]) -> Op R
-function if_ (mbResult, cond, then_, else_) {
-  assert(mbResult === then_.at(-1).r);
-  assert(!else_ || else_.length == 0 || mbResult === else_.at(-1).r);
-  return new instr_pre_imm_post(0x04, mbResult,
-    [cond],  // pre
-    [mbResult],  // imm
-    else_ ?
-      [ ...then_, elseOp, ...else_, end ] :
-      [ ...then_, end ])
-}
+  if_ = (mbResult, cond, then_, else_) => {
+    assert(mbResult === then_.at(-1).r, "mbResult", mbResult, "!== then_.at(-1).r", then_.at(-1).r);
+    assert(!else_ || else_.length == 0 || mbResult === else_.at(-1).r,
+      "else_", else_, "!== undefined && else_.length", else_.length, "!= 0 && mbResult", mbResult, "!== else_.at(-1).r", else_.at(-1).r);
+    return new instr_pre_imm_post(0x04, mbResult,
+      [cond],  // pre
+      [mbResult],  // imm
+      else_ ?
+        [ ...then_, elseOp, ...else_, end ] :
+        [ ...then_, end ]) },
 
 // Result R => Op R -> Op R
-const
   return_ = value => new instr_pre1(0x0f, value.r, value),
   t = T,
   c = {
@@ -700,7 +703,7 @@ const
       new cell(T.import_entry, [ module, field, external_kind_table, type ]),
     // (Str, Str, ResizableLimits) -> ImportEntry
     memory_import_entry: (module, field, limits) =>
-      new cell(T.import_entry, [ module, field, external_kind_memory, limiits ]),
+      new cell(T.import_entry, [ module, field, external_kind_memory, limits ]),
     // (Str, Str, GlobalType) -> ImportEntry
     global_import_entry: (module, field, type) =>
       new cell(T.import_entry, [ module, field, external_kind_global, type ]),
@@ -713,8 +716,166 @@ const
       new cell(T.elem_segment, [ index, offset, varuint32(funcIndex.length), ...funcIndex ]),
     // (VarUint32, InitExpr, Data) -> DataSegment
     data_segment: (index, offset, data) =>
-      new cell(T.data_segment, [ index, offset, varuint32(data.z), data ])
-  }
+      new cell(T.data_segment, [ index, offset, varuint32(data.z), data ]),
+    
+    // ([ValueType], Maybe ValueType) -> FuncType
+    func_type: (paramTypes, returnType) => new cell(T.func_type, [ Func, varuint32(paramTypes.length),
+      ...(returnType ? [ varuint1_1, returnType ] : [ varuint1_0 ]) ]),
+    // (ElemType, ResizableLimits) -> TableType
+    table_type: (type, limits) => {
+      assert(type.v == AnyFunc.v, "type.v", type.v, "!= AnyFunc.v", AnyFunc.v)  // WASM MVP limitation
+      return new cell(T.table_type, [ type, limits ]) },
+    // (ValueType, Maybe boolean) -> GlobalType
+    global_type: (contentType, mutable) => new cell(T.global_type, [
+      contentType, mutable ? varuint1_1 : varuint1_0 ]),
+    
+    // Expressed in number of memory pages (1 page = 64KiB)
+    // (VarUint32, Maybe VarUint32) -> ResizableLimits
+    resizable_limits: (initial, maximum) => new cell(T.resizable_limits, maximum ?
+      [ varuint1_1, initial, maximum ] : [ varuint1_0, initial ]),
+    // (GlobalType, InitExpr) -> GlobalVariable
+    global_variable: (type, init) => new cell(T.global_variable, [ type, init ]),
+    // [N] -> InitExpr
+    init_expr: expr => new cell(T.init_expr, [ ...expr, end ]),
+    // ([LocalEntry], [N]) -> FunctionBody
+    function_body: (locals, code) => {
+      const localCount = varuint32(locals.length);
+      return new cell(T.function_body, [
+        varuint32(localCount.z + sumz(locals) + sumz(code) + 1),  // body_size
+        localCount, ...locals, ...code, end ]) },
+    // (VarUint32, ValueType) -> LocalEntry
+    local_entry: (count, type) => new cell(T.local_entry, [ count, type ]),
+
+    // Semantics of the WebAssembly stack machine:
+    // - Control instructions pop their argument value(s) off the stack, may change
+    //   the program counter, and push result value(s) onto the stack.
+    // - Simple instructions pop their argument value(s) from the stack, apply an
+    //   operator to the values, and then push the result value(s) onto the stack,
+    //   followed by an implicit advancement of the program counter.
+    //       - @github.com/rsms
+
+    // Op Void
+    unreachable: new instr_atom(0x00, Void),
+    // Op Void
+    nop: new instr_atom(0x01, Void),
+    // Begin a block which can also form control flow loops
+    // AnyResult R => (R, [AnyOp]) -> Op R
+    block: (mbResult, body) => {
+      assert(mbResult === body.at(-1).r, "mbResult", mbResult, "!== body.at(-1).r", body.at(-1).r);
+      return new instr_imm1_post(0x02, mbResult, mbResult, [ ...body, end ]) },
+    // [AnyOp] -> Op Void
+    void_block: body => {
+      assert(body.length == 0 || Void === body.at(-1).r,
+        "body.length", body.length, "!= 0 && Void !== body.at(-1).r", body.at(-1).r);
+      return new instr_imm1_post(0x02, Void, EmptyBlock, [ ...body, end ]) },
+
+    // Begin a block which can also form control flow loops
+    // AnyResult R => (R, [AnyOp]) -> Op R
+    loop: (mbResult, body) => {
+      assert(mbResult === body.at(-1).r, "mbResult", mbResult, "!== body.at(-1).r", body.at(-1).r);
+      return new instr_imm1_post(0x03, mbResult, mbResult, [ ...body, end ]) },
+    // [AnyOp] -> Op Void
+    void_loop: body => {
+      assert(body.length == 0 || Void === body.at(-1).r,
+          "body.length", body.length, "!= 0 || Void === body.at(-1).r", body.at(-1).r);
+      return new instr_imm1_post(0x03, Void, EmptyBlock, [ ...body, end ]) },
+    if: if_, if_,  // AnyResult R => (R, Op I32, [AnyOp], Maybe [AnyOp]) -> Op R
+    end,
+    // Branch to the label given as a relative depth, in an enclosing construct
+    // (branching to a block = "break"; branching to a loop = "continue")
+    // uint32 -> Op Void
+    br: relDepth => new instr_imm1(0x0c, Void, varuint32(relDepth)),
+    // Conditionally branch to the given label, in an enclosing construct
+    // (cond false = "Nop"; cond true = "Br")
+    // (uint32, Op I32) -> Op Void
+    br_if: (relDepth, cond) => new instr_pre_imm(0x0d, Void, [ cond ], [ varuint32(relDepth) ]),
+    // Jump table, jumps to a label in an enclosing construct
+    // Has a zero-based array of labels, a default label, and an index operand.
+    // Jumps to the label indexed in the array, or the default label if index is out of bounds.
+    // ([VarUint32], VarUint32, AnyOp) -> Op Void
+    br_table: (targetLabels, defaultLabel, index) => new instr_pre_imm(0x0e, Void,
+      [ index ], [ varuint32(targetLabels.length), ...targetLabels, defaultLabel ]),
+    // Returns a value or no values from this function
+    return: return_, return_,  // Result R => Op R -> Op R
+    return_void: new instr_atom(0x0f, Void),  // Op Void
+    // Calling
+    // Result R => (R, VarUint32, [AnyOp]) -> Op R
+    call: (r, funcIndex, args) => new instr_pre_imm(0x10, r, args, [ funcIndex ]),
+    // Result R => (R, VarUint32, [AnyOp]) -> Op R
+    call_indirect: (r, funcIndex, args) => new instr_pre_imm(0x11, r, args, [ funcIndex, varuint1_0 ]),
+    // Drop discards the value of its operand
+    // R should be the value "under" the operand on the stack
+    // Eg with stack I32 (top) : F64 : F32 (bottom)  =drop=>  F64 (top) : F32 (bottom), then R = F64
+    // AnyResult R => (R, Op Result) -> Op R
+    drop: (r, n) => new instr_pre1(0x1a, r, n),
+    // Select one of two values based on condition
+    // Result R => (Op I32, Op R, Op R) -> Op R
+    select: (cond, trueRes, falseRes) => new isntr_pre(0x1b, trueRes.r, [ trueRes, falseRes, cond ]),
+
+    // Variable access
+    // Result R => (R, uint32) -> Op R
+    get_local: (r, localIndex) => new instr_imm1(0x20, r, varuint32(localIndex)),
+    // (uint32, Op Result) -> Op Void
+    set_local: (localIndex, expr) => new instr_pre_imm(0x21, Void, [ expr ], [ varuint32(localIndex) ]),
+    // Result R => (uint32, Op R) => Op R
+    tee_local: (localIndex, expr) => new instr_pre_imm(0x22, expr.r, [ expr ], [ varuint32(localIndex) ]),
+    // Result R => (R, uint32) -> Op R
+    get_global: (r, globalIndex) => new instr_imm1(0x23, r, varuint32(globalIndex)),
+    // (uint32, Op Result) -> Op Void
+    set_global: (globalIndex, expr) => new instr_pre_imm(0x24, Void, [ expr ], [ varuint32(globalIndex) ]),
+
+    // Memory
+    // () -> Op Int
+    current_memory: () => new instr_imm1(0x3f, c.i32, varuint1_0),
+    // Grows the size of memory by "delta" memory pages, returns the previous memory size in pages, or -1 on failure.
+    // Op Int -> Op Int
+    grow_memory: delta => {
+      assert(delta.v >= 0, "delta.v", delta.v, "< 0");
+      return new instr_pre_imm(0x40, c.i32, [ delta ], [ varuint1_0 ]) },
+    // MemImm, as [ alignment, offset ]
+    align8:  [ varUint32Cache[0], varUint32Cache[0] ],  // [ VarUint32, Int]
+    align16: [ varUint32Cache[1], varUint32Cache[0] ],  // [ VarUint32, Int]
+    align32: [ varUint32Cache[2], varUint32Cache[0] ],  // [ VarUint32, Int]
+    align64: [ varUint32Cache[3], varUint32Cache[0] ],  // [ VarUint32, Int]
+
+    i32: new i32ops(-0x01, 0x7f),  // I32ops
+    i64: new i64ops(-0x02, 0x7e),  // I64ops
+    f32: new f32ops(-0x03, 0x7d),  // F32ops
+    f64: new f64ops(-0x04, 0x7c)   // F64ops
+  },
+
+  // Access helpers
+  get = {
+    // Module -> [Section]
+    sections: m => m.v.slice(2),  // 0=magic, 1=version, 2...=[Section]
+    // (Module, Either VarUint7 uint7) -> Section
+    section: (m, id) => {
+      let ido = (typeof id !== "object") ? varuint7(id) : id;  // VarUint7
+      for (let i = 2; i < m.v.length; ++i) {
+        let section = m.v[i];
+        if (section.v[0] === ido) return section } },
+    // CodeSection -> Iterable FunctionBodyInfo
+    function_bodies: s => ({ [Symbol.iterator] (startIndex) {
+      let index = 3 + (startIndex || 0);
+      return { next () {
+        const funcBody = s.v[index];
+        if (!funcBody) return { done: true, value: null };
+        let localCount = funcBody.v[1];
+        return {
+          done: false,
+          value: {
+            index: index++,
+            locals: funcBody.v.slice(2, localCount.v + 2),
+            code: funcBody.v.slice(2 + localCount.v, funcBody.v.length - 1)  // [AnyOp]
+              // -1 to skip terminating "end"
+          }
+        }
+      } }
+    } })
+  };
+
+
+// Show opcode
 
 const
   opcodes = new Map([
@@ -890,4 +1051,74 @@ const
     [ 0xbd, "i64.reinterpret_f64" ],
     [ 0xbe, "f32.reinterpret_i32" ],
     [ 0xbf, "f64.reinterpret_i64" ]
-  ])
+  ]);
+
+
+// Linear bytecode textual representation
+
+const opnames = new Map();  // string :=> uint8
+opcodes.forEach((...kv) => opnames.set(...kv));
+
+// N -> string
+function fmtimm (n) {
+  switch (n.t) {
+    case t.uint8:
+    case t.uint16:
+    case t.uint32:
+    case t.varuint1:
+    case t.varuint7:
+    case t.varuint32:
+    case t.varint32:
+    case t.varint64:
+    case t.float32:
+    case t.float64: return n.v.toString(10)
+    case t.varint7: return readVarInt7(n.v).toString(10)
+    case t.type: switch (n.v) {
+      case -1:    return 'i32'
+      case -2:    return 'i64'
+      case -3:    return 'f32'
+      case -4:    return 'f64'
+      case -0x10: return 'anyfunc'
+      case -0x20: return 'func'
+      case -0x40: return 'void'
+      default: throw new Error('unexpected type ' + n.t.toString())
+    }
+    default: throw new Error('unexpected imm ' + n.t.toString())
+  }
+}
+// [N] -> string
+function fmtimmv (ns) { return ns.map(n => " " + fmtimm(n)).join("") }
+// ([N], Ctx, number) -> IO string
+function visitOps (nodes, c, depth) { for (let n of nodes) visitOp(n, c, depth) }
+// (N, Ctx, number) -> IO string
+function visitOp (n, c, depth) {
+  switch (n.t) {
+    case t.instr:
+      if (n.v == 0x0b /*end*/ || n.v == 0x05 /*else*/) depth--;
+      return c.writeln(depth, opcodes.get(n.v))
+    case t.instr_imm1:
+      return c.writeln(depth, opcodes.get(n.v) + " " + fmtimm(n.imm))
+    case t.instr_pre:
+      visitOps(n.pre, c, depth);
+      return c.writeln(depth, opcodes.get(n.v))
+    case t.instr_pre1:
+      visitOp(n.pre, c, depth);
+      return c.writeln(depth, opcodes.get(n.v))
+    case t.instr_imm1_post:
+      c.writeln(depth, opcodes.get(n.v) + " " + fmtimm(n.imm));
+      return visitOps(n.post, c, depth + 1)
+    case t.instr_pre_imm:
+      visitOps(n.pre, c, depth);
+      return c.writeln(depth, opcodes.get(n.v) + fmtimmv(n.imm))
+    case t.instr_pre_imm_post:
+      visitOps(n.pre, c, depth);
+      c.writeln(depth, opcodes.get(n.v) + fmtimmv(n.imm));
+      visitOps(n.post, c, depth + 1); break;
+    default: tell.error.call({ addr: "WASM" }, "Unexpected op " + n.t.toString())
+  }
+}
+// ([N], Writer) -> Writer string
+function printCode (instructions, writer) {
+  const ctx = { writeln (depth, chunk) { writer("  ".repeat(depth) + chunk + "\n") } };
+  visitOps(instructions, ctx, 0)
+}

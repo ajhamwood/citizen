@@ -38,6 +38,8 @@ $.targets({
 
     viz.emit("init");
     new ResizeObserver(() => viz.emit('resize')).observe($("svg"));
+
+    testWasm()
   },
   keyup (e) { if ($("#simSelect").validity.valid) {
     switch (e.keyCode) {

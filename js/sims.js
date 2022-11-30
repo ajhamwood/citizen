@@ -92,3 +92,45 @@ var sims = {
     })
     .on("advance", async function () { return await this.stations.next() })
 }
+
+function testWasm () {
+  const
+    { type_section, function_section, code_section, export_section,
+      func_type, varuint32, function_body, str_ascii, external_kind, export_entry,
+      i64, if_, get_local, call } = c,
+    mod = c.module([
+      type_section([
+        func_type([ i64 ], i64)  // type index = 0
+      ]),
+      function_section([
+        varuint32(0)  // function index = 0, using type index 0
+      ]),
+      export_section([
+        // Export "factorial" as function at index 0
+        export_entry(str_ascii("factorial"), external_kind.function, varuint32(0))
+      ]),
+      code_section([
+        // Body of function at index 0
+        function_body([ /* local variables */ ], [
+          if_(i64,  // Result type of "if" expression
+            i64.eq(get_local(i64, 0), i64.const(0)),  // Condition
+            [ i64.const(1) ],  // Then
+            [ i64.mul(  // Else
+              get_local(i64, 0),
+              call(i64, varuint32(0), [  // 0 is the function index
+                i64.sub(get_local(i64, 0), i64.const(1))
+              ])
+            ) ]
+          )
+        ])
+      ])
+    ]),
+
+    codeSection = get.section(mod, sect_id.code);
+  for (let funcBody of get.function_bodies(codeSection))
+    printCode(funcBody.code, s => { console.log(s.replace(/[\r\n]+$/, "")) });
+  const emitbuf = new Emitter(new ArrayBuffer(mod.z));
+  mod.emit(emitbuf);
+  console.log("The buffer...", new Uint8Array(emitbuf.buffer));
+  WebAssembly.instantiate(emitbuf.buffer).then(console.log)
+}
