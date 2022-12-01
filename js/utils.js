@@ -5,10 +5,12 @@ const logLevels = { error: true, warn: true, log: true, info: false, debug: fals
       logColours = { debug: "lightseagreen", info: "lightseagreen", log: "tomato", warn: "tomato", error: "tomato" },
       tell = new Proxy({}, { get ({}, prop) {
         if (logLevels[prop]) return function (event, ...args) {
-          let message = [ `${getTime()} %c${this.addr} %c${event}`,
+          let lastArg = args.pop(), message = [ `${getTime()} %c${this.addr} %c${event}`,
                 "color: greenyellow; font-weight: 900", `color: ${logColours[prop]}; font-weight: 900`, ...args ];
-          console[prop](...message);
-          if (prop === "error") throw new Error("");
+          if (prop === "error") {
+            console.error(...message);
+            throw Object.assign(new Error(""), { stack: lastArg })
+          } else console[prop](...message, lastArg);
         };
         else return () => {}
       } }),

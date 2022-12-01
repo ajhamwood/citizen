@@ -165,14 +165,14 @@ var testModules = (() => {
 var testKat = async () => {
   let data, err, wasm;
   try {
-    const { returnAll } = await VM({ debug: { showPhase: "parser" } })
+    const { returnAll } = await VM({ debug: { showPhase: false } })
       .import({ path: "vm-lib/prelude.kat", memory: null });
     data = await returnAll.run();
-  } catch (e) { throw e/*err = { message: e.message, stack: e.stack }*/ }
-  if (err) tell.warn.call(citizen, "Kat error", "\n" + err.message, "\n" + err.stack);
+  } catch (e) { err = { message: e.message, stack: e.stack } }
+  if (err) tell.error.call(citizen, "Kat error", "\n" + err.message, err.stack);
   else {
     const s = data.toString();
     tell.log.call(citizen, "Kat result", "\nTerm:", s.term, "\nType:", s.type,
-      "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.flatMap(ms => ["\n", ms]))
+      "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.map(ms => "\n" + ms))
   }
 }

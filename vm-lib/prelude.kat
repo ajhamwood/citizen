@@ -1,13 +1,31 @@
 let Bit : U
-    = (B : _) -> B -> B -> B;
+    = {B} -> B -> B -> B;
 let I : Bit
-    = \B i o. i;
+    = \i o. i;
 let O : Bit
-    = \B i o. o;
+    = \i o. o;
 let not : Bit -> Bit
-    = \b B i o. b B o i;
+    = \b i o. b o i;
 let and : Bit -> Bit -> Bit
-    = \f s B i o. f s f;
+    = \f s i o. f (s i o) (f i o);
 let or : Bit -> Bit -> Bit
-    = \f s B i o. f f s;
-and I I
+    = \f s i o. f (f i o) (s i o);
+let xor : Bit -> Bit -> Bit
+    = \f s i o. f (s o i) (s i o);
+let if : {X} -> Bit -> X -> X -> X
+    = \p a b. p a b;
+
+let Pair : {Z} -> (A B : _) -> U
+    = \{Z} A B. A -> B -> (A -> B -> Z) -> Z;
+let pair : {A B} -> Pair A B
+    = \a b z. z a b;
+let fst : {A B} -> (P : (A -> B -> A) -> A) -> A
+    = \p. p (\a b. a);
+let snd : {A B} -> (P : (A -> B -> B) -> B) -> B
+    = \p. p (\a b. b);
+
+fst (pair I O)
+
+-- let bitAdd : Bit -> Bit -> Bit -> Pair Bit Bit
+--     = \a b c. pair (xor (xor a b) c) (or (and a b) (and c (xor a b)));
+-- bitAdd O O O

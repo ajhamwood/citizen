@@ -428,7 +428,7 @@ function VM (options = {}) {
         closeVal ({ ctx, val }) { return { term: this.quote({ ctx, val, lvl: ctx.lvl + 1 }), env: ctx.env } },
 
         unifyCatch ({ ctx, val0, val1 }) { return this.unify({ ctx, lvl: ctx.lvl, val0, val1 }).catch((e, err) => e.msg.slice(0, 17) !== "Unification error" ? err(e) :
-          err({ msg: `${e.msg}\nCan't unify\n    ${this.quote({ ctx, lvl: ctx.lvl, val: val0 })}\nwith\n    ${this.quote({ ctx, lvl: ctx.lvl, val: val1 })}\n` })) },
+          err({ msg: `${e.msg}\nCan't unify\n    ${this.quote({ ctx, lvl: ctx.lvl, val: val0 }).toString(ctx)}\nwith\n    ${this.quote({ ctx, lvl: ctx.lvl, val: val1 }).toString(ctx)}\n` })) },
         insert: Evaluator.match({
           vpi: [ { guard: ({ fvtype }) => fvtype.isImpl, clause ({ ctx, term, fvtype }) { return Result.pure(this.freshMeta(ctx))
             .then(({ meta }) => this.insert({ ctx, term: new App({ func: term, arg: meta, isImpl: true }),
@@ -526,7 +526,7 @@ function VM (options = {}) {
                 new MetaEntry({ mvar, soln: soln === null ? soln : this.quote({ ctx, lvl: 0, val: soln }) })) }))
         },
         displayError ({ msg }, err) {
-          let lines = ctx.source.split(/\r\n?|\n/);
+          let lines = globalContext.source.split(/\r\n?|\n/);
           return err({ message: `${msg}\n${lines[globalContext.pos[0][0] - 1]}\n${"-".repeat(globalContext.pos[0][1] - 1)}${
             "^".repeat(globalContext.pos[1][1] - globalContext.pos[0][1])} ${globalContext.pos.join("-")}` }) }
       })) this[k] = debug(["normalForm", "typecheck", "elaborate"].includes(k) ?
