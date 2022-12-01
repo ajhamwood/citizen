@@ -92,3 +92,58 @@ var sims = {
     })
     .on("advance", async function () { return await this.stations.next() })
 }
+
+async function testWasm (mod) {
+  const codeSection = get.section(mod, sect_id.code);
+  for (let funcBody of get.function_bodies(codeSection))
+    printCode(funcBody.code, s => { console.log(s.replace(/[\r\n]+$/, "")) });
+  const emitbuf = new Emitter(new ArrayBuffer(mod.z));
+  mod.emit(emitbuf);
+  console.log("The buffer...\n", Array.from(new Uint8Array(emitbuf.buffer)).map((byte, i) => byte.toString(16).padStart(2, "0") + ((i + 1) % 4 ? "" : "\n")).join(" "));
+  return await WebAssembly.instantiate(emitbuf.buffer)
+}
+
+var testModules = (() => {
+  const {
+    uint8, uint32, float32, float64, varuint1, varuint7, varuint32, varint7, varint32, varint64,
+    any_func, func, empty_block, void_, external_kind, data, str, str_ascii, str_utf8, module,
+    custom_section, type_section, import_section, function_section, table_section, memory_section,
+    global_section, export_section, start_section, element_section, code_section, data_section,
+    function_import_entry, table_import_entry, memory_import_entry, global_import_entry, export_entry,
+    elem_segment, data_segment, func_type, table_type, global_type,
+    resizable_limits, global_variable, init_expr, function_body, local_entry,
+    unreachable, nop, block, void_block, loop, void_loop, if_, end, br, br_if, br_table,
+    return_, return_void, call, call_indirect, drop, select,
+    get_local, set_local, tee_local, get_global, set_global,
+    current_memory, grow_memory, align8, align16, align32, align64, i32, i64, f32, f64
+  } = c;
+  return {
+    fib: module([
+      type_section([
+        func_type([ i64 ], i64)  // type index = 0
+      ]),
+      function_section([
+        varuint32(0)  // function index = 0, using type index 0
+      ]),
+      export_section([
+        // Export "factorial" as function at index 0
+        export_entry(str_ascii("factorial"), external_kind.function, varuint32(0))
+      ]),
+      code_section([
+        // Body of function at index 0
+        function_body([ /* local variables */ ], [
+          if_(i64,  // Result type of "if" expression
+            i64.eq(get_local(i64, 0), i64.const(0)),  // Condition
+            [ i64.const(1) ],  // Then
+            [ i64.mul(  // Else
+              get_local(i64, 0),
+              call(i64, varuint32(0), [  // 0 is the function index
+                i64.sub(get_local(i64, 0), i64.const(1))
+              ])
+            ) ]
+          )
+        ])
+      ])
+    ])
+  }
+})()

@@ -1,4 +1,5 @@
 importScripts("./machine.js");
+importScripts("./utils.js");
 importScripts("./blockchain.js");
 // importScripts("./trie.js");
 importScripts("./vm.js");
@@ -6,17 +7,17 @@ importScripts("./vm.js");
 
 // Logging, crypto, async, and other utilities
 
-function getTime () { let d = performance.now() + peer.relTime;
-  return String(d < 0 ? 1e7 + d : d).padStart(7, '0') }
-const tell = new Proxy({}, { get ({}, prop) {
-        if (logLevels[prop]) return function (event, ...args) {
-          console[prop](`${getTime.call(this)} %c${this.addr} %c${event}`,
-            "color: greenyellow; font-weight: 900", `color: ${logColours[prop]}; font-weight: 900`, ...args)
-        };
-        else return () => {}
-      } }),
-      logLevels = { error: true, warn: true, log: true, info: false, debug: false },
-      logColours = { debug: "lightseagreen", info: "lightseagreen", log: "tomato", warn: "tomato", error: "tomato" };
+// function getTime () { let d = performance.now() + peer.relTime;
+//   return String(d < 0 ? 1e7 + d : d).padStart(7, '0') }
+// const tell = new Proxy({}, { get ({}, prop) {
+//         if (logLevels[prop]) return function (event, ...args) {
+//           console[prop](`${getTime.call(this)} %c${this.addr} %c${event}`,
+//             "color: greenyellow; font-weight: 900", `color: ${logColours[prop]}; font-weight: 900`, ...args)
+//         };
+//         else return () => {}
+//       } }),
+//       logLevels = { error: true, warn: true, log: true, info: false, debug: false },
+//       logColours = { debug: "lightseagreen", info: "lightseagreen", log: "tomato", warn: "tomato", error: "tomato" };
 
 const MIN_SUCC_LENGTH = 1,
       FINGER_LENGTH = 160,
@@ -30,18 +31,7 @@ function isStrictlyBetween (low, el, high) {  // Always false if low === high
   return low < high ? low < el && el < high : low > high ? low < el || el < high : false
 }
 
-const toSHA1 = async msg => new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(msg))),
-      toBuf = (bn, len = 0) => {
-        let ar = [];
-        do {
-          ar.unshift(Number(bn % 256n));
-          bn = (bn/256n)>>0n
-        } while (bn > 0n);
-        return new Uint8Array(Array(Math.max(0, len - ar.length)).concat(ar))
-      },
-      fromBuf = buf => new Uint8Array(buf).reduce((acc, b) => 256n * acc + BigInt(b), 0n),
-      fingerJust = ar => ar.reduce((acc, addr, rank) => typeof addr === "undefined" ? acc : Object.assign(acc, { [rank]: addr }), {}),
-      keyToId = async k => fromBuf(await toSHA1(k)).toString(16).padStart(40, "0"),
+const fingerJust = ar => ar.reduce((acc, addr, rank) => typeof addr === "undefined" ? acc : Object.assign(acc, { [rank]: addr }), {}),
       addrExists = async k => (txf => ~[...peer.addrList].findIndex(([, id]) => txf === id))(await keyToId(k));
 
 const resetResolveSeq = queues =>
@@ -158,7 +148,6 @@ const maintenance = (timeout => ({
 
 var peer = new $.Machine ({
       baseTime: null,
-      relTime: null,
 
       // Chord properties
       mtTime: 500,
@@ -224,7 +213,7 @@ $.targets({
       $.pipe("init", () => new Promise(r => resInit = r));
       $.pipe("listen", () => new Promise(r => this.listeningAwait = r));
       this.baseTime = baseTime;
-      this.relTime = relTime;
+      appStart = relTime;
 
       //Bucket
       this.on("join", target => {

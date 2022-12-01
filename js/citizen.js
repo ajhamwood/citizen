@@ -16,26 +16,10 @@ function formatTime (t) {  // TODO: reload all times in page if day ticks over
   return new Intl.DateTimeFormat('en-AU', config).format(t)
 }
 
-function getTime () { let d = performance.now() - this.appStart;
-  return String(d < 0 ? 1e7 + d : d).padStart(7, '0') }
-const logLevels = { error: true, warn: true, log: true, info: false, debug: false },
-      logColours = { debug: "lightseagreen", info: "lightseagreen", log: "tomato", warn: "tomato", error: "tomato" },
-      tell = new Proxy({}, { get ({}, prop) {
-        if (logLevels[prop]) return function (event, ...args) {
-          console[prop](`${getTime.call(this)} %c${this.addr} %c${event}`,
-            "color: greenyellow; font-weight: 900", `color: ${logColours[prop]}; font-weight: 900`, ...args)
-        };
-        else return () => {}
-      } }),
-      fromBuf = buf => new Uint8Array(buf).reduce((acc, b) => 256n * acc + BigInt(b), 0n),
-      toSHA1 = async msg => new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(msg))),
-      keyToId = async k => fromBuf(await toSHA1(k)).toString(16).padStart(40, "0");
-
-var citizen = new $.Machine({ sims }),
+var citizen = new $.Machine({ sims, addr: "citizen" }),
     chord = new $.Machine({
       nodes: [],
       baseTime: null,
-      appStart: null,
       closedWorkers: [],
 
       addr: "top",
@@ -54,6 +38,9 @@ $.targets({
 
     viz.emit("init");
     new ResizeObserver(() => viz.emit('resize')).observe($("svg"));
+
+    let { instance } = await testWasm(testModules.fib);
+    tell.log.call(citizen, "Wasm fib test", instance.exports.factorial(8n));
   },
   keyup (e) { if ($("#simSelect").validity.valid) {
     switch (e.keyCode) {
@@ -124,13 +111,13 @@ $.targets({
 
   chord: {
     startTimer () {
-      this.appStart = performance.now();
+      appStart = performance.now();
       this.baseTime = Date.now()
     },
 
     createNode () {
       const worker = this.closedWorkers.pop() ?? new Worker("js/node.js");
-      worker.postMessage({ type: "start", data: { baseTime: this.baseTime, relTime: performance.now() - this.appStart } });
+      worker.postMessage({ type: "start", data: { baseTime: this.baseTime, relTime: appStart - performance.now() } });
       const newNode = {
               worker,
               id: null,  // Virtual address
@@ -179,26 +166,24 @@ $.targets({
             pbftTopSpan.innerHTML = pbftPhase.innerHTML = pbftDiv.dataset.phase = "collect";
             chord.networkSize++;
             pbftReq.innerHTML = data.limit;  // TODO: global controls
-            // newNode.blockchain.forEach((block, i) => {  // TODO: get blockchain from DHT on rejoin
-            //   $.load("option", ".blockchain-seqno", peerDiv).forEach(([el]) => el.value = el.innerHTML = i);
-            //   if (!i) {
-            //     blockchainHash.innerHTML = block.hash;
-            //     blockchainTS.innerHTML = block.timestamp
-            //   }
-            // });
+            // TODO: get blockchain from DHT on rejoin
+            
             $.queries({
               ".blockchain-seqno": { async change (e) { chord.emit("selectBlock", ix) } },
+
               ".smart-contract-create": { click () {
                 const input = $(".smart-contract-codeinput", peerDiv);
                 newNode.worker.postMessage({ type: "doBroadcastTx", data: { code: input.value }});
                 input.value = "";
                 $.all(".pseudofocus", peerDiv).forEach(el => el.classList.remove("pseudofocus"))
               } },
+
               ".smart-contract-run": { click () {
                 const acct = $(".smart-contract-account", peerDiv);
                 if (!acct.validity.valid) return;
                 newNode.worker.postMessage({ type: "doBroadcastTx", data: { to: acct.value }});
               } },
+
               ".smart-contract-account": { change () {
                 chord.emit("codeListingUpdate", $.all(".smart-contract-args, .smart-contract-codelisting > *", peerDiv),
                   chord.newAccts.find(({ addr }) => this.value === addr))
@@ -415,19 +400,23 @@ $.targets({
         typeSpan.innerHTML = txDiv.dataset.type = tx.data.type;
         [ "raw", "evaluated" ].forEach((val, i) => [ "id", "for" ].forEach((attr, j) =>
           codeviewForm.children[j + 2 * i].setAttribute(attr, val + ix)));
+
         $.queries({
           ".blockchain-txcode": { click () {
             txDiv.classList.add("pseudofocus");
             $(".smart-contract-transaction", peerDiv).classList.add("pseudofocus")
           } },
+
           ".smart-contract-codeview > label": { click (e) { txDiv.dataset.codeview = e.target.htmlFor.match(/[a-z]+/)[0] } },
         }, txDiv);
+
         switch (tx.data.type) {
           case "transact":
             toSpan.innerHTML = tx.to;
             txDiv.dataset.codeview = "evaluated";
             chord.emit("codeListingUpdate", $.all(":scope > *", txcodeDiv), tx.data)
             break;
+            
           case "createAccount":
             chord.emit("codeListingUpdate", $.all(":scope > *", txcodeDiv), chord.newAccts.find(({ addr }) => tx.data.account.codeHash === addr))
         }
@@ -491,7 +480,7 @@ $.targets({
     },
 
     codeListingUpdate (codelistingDivs, txData) {
-      const [ argsDiv, codeRawDiv, progValueDiv, progCtxsDiv ] =codelistingDivs,
+      const [ argsDiv, codeRawDiv, progValueDiv, progCtxsDiv ] = codelistingDivs,
             [ codeTermSpan, codeTypeSpan ] = progValueDiv.children, [ codeElabDiv, codeMetasDiv ] = progCtxsDiv.children;
       Array.from(argsDiv.children).forEach(el => el.remove());
       txData.args?.forEach(arg => $.load("smart-contract-appliedarg", ".smart-contract-appliedargs", argsDiv.parentElement)[0][0].innerHTML = arg);
