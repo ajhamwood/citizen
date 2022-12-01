@@ -41,6 +41,8 @@ $.targets({
 
     let { instance } = await testWasm(testModules.fib);
     tell.log.call(citizen, "Wasm fib test", instance.exports.factorial(8n));
+
+    await testKat()
   },
   keyup (e) { if ($("#simSelect").validity.valid) {
     switch (e.keyCode) {

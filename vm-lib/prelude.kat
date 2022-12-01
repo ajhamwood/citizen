@@ -1,0 +1,13 @@
+let Bit : U
+    = (B : _) -> B -> B -> B;
+let I : Bit
+    = \B i o. i;
+let O : Bit
+    = \B i o. o;
+let not : Bit -> Bit
+    = \b B i o. b B o i;
+let and : Bit -> Bit -> Bit
+    = \f s B i o. f s f;
+let or : Bit -> Bit -> Bit
+    = \f s B i o. f f s;
+and I I

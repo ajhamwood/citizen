@@ -144,6 +144,35 @@ var testModules = (() => {
           )
         ])
       ])
-    ])
+    ]),
+    // memory: module([
+    //   type_section([
+    //     func_type([ i32, i32 ], i32)
+    //   ]),
+    //   import_section([
+    //     memory_import_entry(str_utf8("js"), str_utf8("mem"), )
+    //   ]),
+    //   function_section([
+    //     varuint32(0)
+    //   ]),
+    //   memory_section([
+    //     resizable_limits(varuint32(1), varuint32(1))
+    //   ]),
+    // ])
   }
-})()
+})();
+
+var testKat = async () => {
+  let data, err, wasm;
+  try {
+    const { returnAll } = await VM({ debug: { showPhase: "parser" } })
+      .import({ path: "vm-lib/prelude.kat", memory: null });
+    data = await returnAll.run();
+  } catch (e) { throw e/*err = { message: e.message, stack: e.stack }*/ }
+  if (err) tell.warn.call(citizen, "Kat error", "\n" + err.message, "\n" + err.stack);
+  else {
+    const s = data.toString();
+    tell.log.call(citizen, "Kat result", "\nTerm:", s.term, "\nType:", s.type,
+      "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.flatMap(ms => ["\n", ms]))
+  }
+}
