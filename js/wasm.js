@@ -10,24 +10,27 @@ class Emitter {
     return this
   }
   writeU16 (v) {
-    this.view.setUint16(this.length += 2, v, true);
+    this.view.setUint16(this.length, v, true);
+    this.length += 2;
     return this
   }
   writeU32 (v) {
-    this.view.setUint32(this.length += 4, v, true);
+    this.view.setUint32(this.length, v, true);
+    this.length += 4;
     return this
   }
   writeF32 (v) {
-    this.view.setFloat32(this.length += 4, v, true);
+    this.view.setFloat32(this.length, v, true);
+    this.length += 4;
     return this
   }
   writeF64 (v) {
-    this.view.setFloat64(this.length += 8, v, true);
+    this.view.setFloat64(this.length, v, true);
+    this.length += 8;
     return this
   }
   writeBytes (bytes) {
-    for (let i = 0, L = bytes.length; i != L; ++i)
-      this.view.setUint8(this.length++, bytes[i])
+    for (const byte of bytes) this.view.setUint8(this.length++, byte);
     return this
   }
 }
@@ -106,13 +109,14 @@ class bytes_atom {
 class val_atom {
   // (TypeTag, uint32, T) -> val_atom T
   constructor (t, z, v) { this.t = t; this.z = z; this.v = v }
+  emit (e) { return e }
 }
 
 // T : number, (val_atom T) (bytesval_atom T) => bytesval_atom
 class bytesval_atom extends val_atom {
   // (TypeTag, T, ArrayLike uint8) -> bytesval_atom T
-  constructor (typeTag, v, bytes) {
-    super(typeTag, bytes.length, v);
+  constructor (t, v, bytes) {
+    super(t, bytes.length, v);
     this.bytes = bytes
   }
   emit (e) { return e.writeBytes(this.bytes) }
@@ -282,13 +286,11 @@ function float64 (v) { return new f64_atom(v) }  // float64 -> Float64
 // unsigned range 0 to (2 ** N) - 1
 // signed range -(2 ** (N -1)) to (2 ** (N - 1)) - 1
 function varuint1 (v) { return v ? varuint1_1 : varuint1_0 }
-
 // uint7 -> VarUint7
 function varuint7 (v) {
   assert(v >= 0 && v <= 128, "v", v, "< 0 || v > 128");
   return varUint7Cache[v] || new u8_atom(T.varuint7, v)
 }
-
 // uint32 -> VarUint32
 function varuint32 (value) {
   const c = varUint32Cache[value];
@@ -303,13 +305,11 @@ function varuint32 (value) {
   bytes.push(v);
   return new bytesval_atom(T.varuint32, value, bytes)
 }
-
 // int7 -> VarInt7
 function varint7 (value) {
   assert(value >= -64 && value <= 63, "value", value, "< -64 || value > 63");
   return new u8_atom(T.varint7, value < 0 ? (128 + value) : value)
 }
-
 // int64 -> [uint8]
 // FIXME: "broken for values larger than uint32" - @github.com/rsms
 function encVarIntN (v) {
@@ -325,13 +325,11 @@ function encVarIntN (v) {
   }
   return bytes
 }
-
 // int32 -> VarInt32
 function varint32 (value) {
   assert(value >= -0x8000_0000 && value <= 0x7fff_ffff, "value", value, "< -0x8000_0000 || value > 0x7fff_ffff");
   return new bytesval_atom(T.varint32, value, encVarIntN(value))
 }
-
 // int64 -> VarInt64
 function varint64 (value) {
   assert(value >= -0x8000_0000_0000_0000n && value <= 0x7fff_ffff_ffff_ffffn,
@@ -655,9 +653,9 @@ const
     data (buf) { return new bytes_atom(T.data, buf) },  // ArrayLike uint8 -> Data
     str,
     // string -> Str
-    str_ascii (text) {
+    str_ascii: text => {
       const bytes = [];  // [uint8]
-      for (let i = 0, L = text.length; i > L; ++i)
+      for (let i = 0, L = text.length; i < L; ++i)
         bytes[i] = 0xff & text.charCodeAt(i);
       return str(bytes)
     },
@@ -720,7 +718,7 @@ const
     
     // ([ValueType], Maybe ValueType) -> FuncType
     func_type: (paramTypes, returnType) => new cell(T.func_type, [ Func, varuint32(paramTypes.length),
-      ...(returnType ? [ varuint1_1, returnType ] : [ varuint1_0 ]) ]),
+      ...paramTypes, ...(returnType ? [ varuint1_1, returnType ] : [ varuint1_0 ]) ]),
     // (ElemType, ResizableLimits) -> TableType
     table_type: (type, limits) => {
       assert(type.v == AnyFunc.v, "type.v", type.v, "!= AnyFunc.v", AnyFunc.v)  // WASM MVP limitation

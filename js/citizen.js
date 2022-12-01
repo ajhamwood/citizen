@@ -39,7 +39,8 @@ $.targets({
     viz.emit("init");
     new ResizeObserver(() => viz.emit('resize')).observe($("svg"));
 
-    testWasm()
+    let { instance } = await testWasm(testModules.fib);
+    tell.log.call(citizen, "Wasm fib test", instance.exports.factorial(8n));
   },
   keyup (e) { if ($("#simSelect").validity.valid) {
     switch (e.keyCode) {

@@ -93,12 +93,32 @@ var sims = {
     .on("advance", async function () { return await this.stations.next() })
 }
 
-function testWasm () {
-  const
-    { type_section, function_section, code_section, export_section,
-      func_type, varuint32, function_body, str_ascii, external_kind, export_entry,
-      i64, if_, get_local, call } = c,
-    mod = c.module([
+async function testWasm (mod) {
+  const codeSection = get.section(mod, sect_id.code);
+  for (let funcBody of get.function_bodies(codeSection))
+    printCode(funcBody.code, s => { console.log(s.replace(/[\r\n]+$/, "")) });
+  const emitbuf = new Emitter(new ArrayBuffer(mod.z));
+  mod.emit(emitbuf);
+  console.log("The buffer...\n", Array.from(new Uint8Array(emitbuf.buffer)).map((byte, i) => byte.toString(16).padStart(2, "0") + ((i + 1) % 4 ? "" : "\n")).join(" "));
+  return await WebAssembly.instantiate(emitbuf.buffer)
+}
+
+var testModules = (() => {
+  const {
+    uint8, uint32, float32, float64, varuint1, varuint7, varuint32, varint7, varint32, varint64,
+    any_func, func, empty_block, void_, external_kind, data, str, str_ascii, str_utf8, module,
+    custom_section, type_section, import_section, function_section, table_section, memory_section,
+    global_section, export_section, start_section, element_section, code_section, data_section,
+    function_import_entry, table_import_entry, memory_import_entry, global_import_entry, export_entry,
+    elem_segment, data_segment, func_type, table_type, global_type,
+    resizable_limits, global_variable, init_expr, function_body, local_entry,
+    unreachable, nop, block, void_block, loop, void_loop, if_, end, br, br_if, br_table,
+    return_, return_void, call, call_indirect, drop, select,
+    get_local, set_local, tee_local, get_global, set_global,
+    current_memory, grow_memory, align8, align16, align32, align64, i32, i64, f32, f64
+  } = c;
+  return {
+    fib: module([
       type_section([
         func_type([ i64 ], i64)  // type index = 0
       ]),
@@ -124,13 +144,6 @@ function testWasm () {
           )
         ])
       ])
-    ]),
-
-    codeSection = get.section(mod, sect_id.code);
-  for (let funcBody of get.function_bodies(codeSection))
-    printCode(funcBody.code, s => { console.log(s.replace(/[\r\n]+$/, "")) });
-  const emitbuf = new Emitter(new ArrayBuffer(mod.z));
-  mod.emit(emitbuf);
-  console.log("The buffer...", new Uint8Array(emitbuf.buffer));
-  WebAssembly.instantiate(emitbuf.buffer).then(console.log)
-}
+    ])
+  }
+})()
