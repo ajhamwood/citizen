@@ -1,0 +1,8 @@
+let Eq : {A : U} -> A -> A -> U
+    = \{A} x y. (P : A -> U) -> P x -> P y;
+let refl : {A : U}{x : A} -> Eq {A} x x
+    = \_ px. px;
+let the : (A : U) -> A -> A = \_ x. x;
+let m : (A : U)(B : U) -> U -> U -> U = _;
+
+\a b. the (Eq (m a a) (\x y. y)) refl

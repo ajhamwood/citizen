@@ -165,8 +165,8 @@ var testModules = (() => {
 var testKat = async () => {
   let data, err, wasm;
   try {
-    const { returnAll } = await VM({ debug: { showPhase: false } })
-      .import({ path: "vm-lib/prelude.kat", memory: null });
+    const { returnAll } = await VM({ debug: { showPhase: "parser" } })
+      .import({ path: "vm-lib/scratch.kat", memory: null });
     data = await returnAll.run();
   } catch (e) { err = { message: e.message, stack: e.stack } }
   if (err) tell.error.call(citizen, "Kat error", "\n" + err.message, err.stack);

@@ -72,7 +72,7 @@ function VM (options = {}) {
           Lam (ctx, prec = 0) {
             let fresh = name => name === "_" ? "_" : ctx.types.reduce((acc, [n]) => new RegExp(`^${acc}[']*$`).test(n) ? n + "'" : acc, name),
                 name = fresh(this.name),
-                goLam = (name, body, isImpl) => {
+                goLam = (name, body) => {
                   let keepCtx = { ...ctx, env: [...ctx.env], types: [...ctx.types] };
                   if (name) ctx.types.push([name]);
                   let res = (name => body.constructor.name !== "Lam" ? `. ${body.toString(ctx, 0)}` :
@@ -361,9 +361,12 @@ function VM (options = {}) {
           if (e !== null) return this.force({ ctx, val: this.vAppSp({ ctx, val: e, spine: val.spine }) })
         } return val },
 
-        nextMeta: (i => () => i++)(0),
+        ...(i => ({
+          nextMetaVar: () => i++,
+          reset: () => i = 0
+        }))(0),
         freshMeta (ctx) {
-          let mvar = this.nextMeta();
+          let mvar = this.nextMetaVar();
           globalContext.metas.set(mvar, null);
           return { ctx, meta: new InsMeta({ mvar, bds: ctx.bds }) } },
         
@@ -495,11 +498,12 @@ function VM (options = {}) {
             return this.check({ ctx, rterm: rterm.term, vtype: cvtype })
               .then(({ term }) => this.infer({ ctx: this.define({ ctx, name: rterm.name, val: this.eval({ ctx, term, env: ctx.env }), vtype: cvtype }), rterm: rterm.next })
                 .then(({ term: next, vtype }) => ({ ctx, term: new Let({ name: rterm.name, type, term, next }), vtype }))) }) },
-          rhole ({ ctx }) { return { ctx, vtype: this.eval({ ctx, env: ctx.env, term: this.freshMeta(ctx).meta }), term: this.freshMeta(ctx).meta } }
+          rhole ({ ctx }) { return Result.pure({ ctx, vtype: this.eval({ ctx, env: ctx.env, term: this.freshMeta(ctx).meta }), term: this.freshMeta(ctx).meta }) }
         }, { decorate: ({ rterm }) => globalContext.pos = rterm.pos, scrut: [ "rterm" ] }),
 
-        doElab ({ rterm }) { return this.infer({ ctx: { env: [], types: [], bds: [], lvl: 0 }, rterm })
-          .catch(this.displayError) },
+        doElab ({ rterm }) {
+          this.reset();
+          return this.infer({ ctx: { env: [], types: [], bds: [], lvl: 0 }, rterm }).catch(this.displayError) },
         normalForm ({ data: rterm }) {
           debug.log()("Expression normal form:");
           return this.doElab({ rterm })

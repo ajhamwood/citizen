@@ -7,18 +7,18 @@ let O : Bit
 let not : Bit -> Bit
     = \b i o. b o i;
 let and : Bit -> Bit -> Bit
-    = \f s i o. f (s i o) (f i o);
+    = \x y i o. x (y i o) (x i o);
 let or : Bit -> Bit -> Bit
-    = \f s i o. f (f i o) (s i o);
+    = \x y i o. x (x i o) (y i o);
 let xor : Bit -> Bit -> Bit
-    = \f s i o. f (s o i) (s i o);
-let if : {X} -> Bit -> X -> X -> X
+    = \x y i o. x (y o i) (y i o);
+let if : {R} -> Bit -> R -> R -> R
     = \p a b. p a b;
 
-let Pair : {Z} -> (A B : _) -> U
-    = \{Z} A B. A -> B -> (A -> B -> Z) -> Z;
+let Pair : {P} -> (A B : _) -> U
+    = \{P} A B. A -> B -> (A -> B -> P) -> P;
 let pair : {A B} -> Pair A B
-    = \a b z. z a b;
+    = \a b p. p a b;
 let fst : {A B} -> (P : (A -> B -> A) -> A) -> A
     = \p. p (\a b. a);
 let snd : {A B} -> (P : (A -> B -> B) -> B) -> B
