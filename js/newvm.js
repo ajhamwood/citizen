@@ -40,9 +40,12 @@ function VM (options = {}) {
     static throw (e) { return new Result(({}, l) => l(e)) }  // Reject
   }
 
-  const globalContext = { metas: new Map(), pos: [], source: "" };
+  const globalContext = { metas: new Map(), checks: new Map(), pos: [], source: "" };
 
-  class AST { constructor (o) { Object.assign(this, o) } get [Symbol.toStringTag] () { return "AST" } }
+  class AST {
+    static names (ctx) { let names = []; ctx.path.forEach(({ bind, define }) => names.push((bind ?? define).name)); return names }
+    constructor (o) { Object.assign(this, o) } get [Symbol.toStringTag] () { return "AST" }
+  }
 
   [ "RVar", "RLam", "RApp", "RU", "RPi", "RLet", "RHole",
     "Var", "App", "Lam", "Pi", "U", "Let", "Meta", "InsMeta", "MetaEntry",
@@ -52,64 +55,77 @@ function VM (options = {}) {
       get [Symbol.toStringTag] () { return name }
     } })[name]);
 
-  const prettyPrint = {
-          RVar () { return `RVar ${this.name}` },
-          RLam () {  // nameIcit := name:string | isImpl:boolean
-            return `RLam ${({ boolean: this.nameIcit ? `{${this.name}}` : this.name,
-              string: `{${this.nameIcit} = ${this.name}}` })[typeof this.nameIcit]}. ${this.body}` },
-          RApp () {   // nameIcit := name:string | isImpl:boolean
-            return `(${this.func} :@: ${({ boolean: this.nameIcit ? `{${this.arg}}` : this.arg,
-              string: `{${this.nameIcit} = ${this.arg}}` })[typeof this.nameIcit]})` },
-          RU () { return "RU" },
-          RPi () { return `RPi ${this.isImpl ? `{${this.name} : ${this.dom}}` : `(${this.name} : ${this.dom})`} -> ${this.cod}` },
-          RLet () { return `let ${this.name} : ${this.type} = ${this.term};\n${this.next}` },
-          RHole () { return `{?}` },
+  const
+    prettyPrint = {
+      RVar () { return `RVar ${this.name}` },
+      RLam () {  // nameIcit := name:string | isImpl:boolean
+        switch (typeof this.nameIcit) {
+          case "boolean": const str = this.mbType === null ? this.name : `${this.name} : ${this.mbType}`;
+            return `RLam ${this.nameIcit ? `{${str}}` : this.mbType === null ? str : `(${str})`}. ${this.body}`
+          case "string": return `RLam {${this.nameIcit} = ${this.name}}. ${this.body}` } },
+      RApp () {   // nameIcit := name:string | isImpl:boolean
+        return `(${this.func} :@: ${({ boolean: this.nameIcit ? `{${this.arg}}` : this.arg,
+          string: `{${this.nameIcit} = ${this.arg}}` })[typeof this.nameIcit]})` },
+      RU () { return "RU" },
+      RPi () { return `RPi ${this.isImpl ? `{${this.name} : ${this.dom}}` : `(${this.name} : ${this.dom})`} -> ${this.cod}` },
+      RLet () { return `let ${this.name} : ${this.type} = ${this.term};\n${this.next}` },
+      RHole () { return `{?}` },
 
-          Var (ctx) { let lvl = ctx.types.length - this.ix - 1;
-            return lvl >= 0 ? ctx.types[lvl][0] : `#${-1 - lvl}` },
-          App (ctx, prec = 0) { return (str => prec > 2 ? `(${str})` : str)
-            (`${this.func.toString(ctx, 2)} ${(arg => this.isImpl ? `{${arg.toString(ctx, 0)}}` : arg.toString(ctx, 3))(this.arg)}`) },
-          Lam (ctx, prec = 0) {
-            let fresh = name => name === "_" ? "_" : ctx.types.reduce((acc, [n]) => new RegExp(`^${acc}[']*$`).test(n) ? n + "'" : acc, name),
-                name = fresh(this.name),
-                goLam = (name, body) => {
-                  let keepCtx = { ...ctx, env: [...ctx.env], types: [...ctx.types] };
-                  if (name) ctx.types.push([name]);
-                  let res = (name => body.constructor.name !== "Lam" ? `. ${body.toString(ctx, 0)}` :
-                        ` ${body.isImpl ? `{${name}}` : name}${goLam(name, body.body)}`)(fresh(body.name));
-                  Object.assign(ctx, keepCtx);
-                  return res
-                };
-            return (str => prec > 0 ? `(${str})` : str)(`λ ${this.isImpl ? `{${name}}` : name}${goLam(name, this.body)}`) },
-          Pi (ctx, prec = 0) {
-            let fresh = name => name === "_" ? "_" : ctx.types.reduce((acc, [n]) => new RegExp(`^${acc}[']*$`).test(n) ? n + "'" : acc, name),
-                name = fresh(this.name),
-                piBind = (name, dom, isImpl) => (body => isImpl ? `{${body}}` : `(${body})`)(name + " : " + dom.toString(ctx, 0)),
-                goPi = (name, cod) => {
-                  let keepCtx = { ...ctx, env: [...ctx.env], types: [...ctx.types] };
-                  if (name) ctx.types.push([name]);
-                  let res = cod.constructor.name !== "Pi" ? ` → ${cod.toString(ctx, 1)}` :
-                        cod.name !== "_" ? (name => piBind(name, cod.dom, cod.isImpl) + goPi(name, cod.cod))(fresh(cod.name)) :
-                          ` → ${cod.dom.toString(ctx, 2)} → ${cod.cod.toString({ ...ctx, types: ctx.types.concat([["_"]]) }, 1) }`;
-                  Object.assign(ctx, keepCtx);
-                  return res
-                };
-            return (str => prec > 1 ? `(${str})` : str)
-              (name === "_" ? `${this.dom.toString(ctx, 2)} → ${this.cod.toString({ ...ctx, types: ctx.types.concat([["_"]]) }, 1) }` :
-                piBind(name, this.dom, this.isImpl) + goPi(name, this.cod)) },
-          U () { return "U" },
-          Let (ctx, prec = 0) {
-            let fresh = name => name === "_" ? "_" : ctx.types.reduce((acc, [n]) => new RegExp(`^${acc}[']*$`).test(n) ? n + "'" : acc, name),
-                name = fresh(this.name);
-            return (str => prec > 0 ? `(${str})` : str)
-              (`let ${name} : ${this.type.toString(ctx, 0)}\n    = ${this.term.toString(ctx, 0)};\n${
-                this.next.toString({ ...ctx, types: ctx.types.concat([[name]]) }, 0)}`) },
-          Meta () { return `?${this.mvar}` },
-          InsMeta (ctx, prec) { return (str => prec > 2 ? `(${str})` : str)
-            (`?${this.mvar}${ctx.types.filter(({}, i) => this.bds[i]).map(([n]) => ` ${n}`).join("")}`) },
+      Var (ctx, names = AST.names(ctx)) { const lvl = names.length - this.ix - 1;
+        if (lvl >= 0) { const str = names[lvl]; return str === "_" ? "@" + this.ix : str }
+        else return `#${-1 - lvl}` },
+      App (ctx, names = AST.names(ctx), prec = 0) {
+        const str = `${this.func.toString(ctx, names, 2)} ${this.isImpl ? `{${this.arg.toString(ctx, names, 0)}}` : this.arg.toString(ctx, names, 3)}`;
+        return prec > 2 ? `(${str})` : str },
+      Lam (ctx, names = AST.names(ctx), prec = 0) { const
+        fresh = (names, name) => name === "_" ? "_" : names.reduce((acc, n) => new RegExp(`^${acc}[']*$`).test(n) ? n + "'" : acc, name),
+        name = fresh(names, this.name),
+        goLam = (names, name, body) => { let res;
+          const keepCtx = { ...ctx, env: [...ctx.env] }, ns = names.concat([name]);
+          if (body.constructor.name !== "Lam") res = `. ${body.toString(ctx, ns, 0)}`;
+          else { const n = this.fresh(ns, body.name); res = ` ${body.isImpl ? `{${n}}` : n}${goLam(ns, n, body.body)}` }
+          Object.assign(ctx, keepCtx);
+          return res
+        },
+        str = `λ ${this.isImpl ? `{${name}}` : name}${goLam(names, name, this.body)}`
+        return prec > 0 ? `(${str})` : str },
+      Pi (ctx, names = AST.names(ctx), prec = 0) { const
+        fresh = (names, name) => name === "_" ? "_" : names.reduce((acc, n) => new RegExp(`^${acc}[']*$`).test(n) ? n + "'" : acc, name),
+        name = fresh(names, this.name),
+        piBind = (names, name, dom, isImpl) => (body => isImpl ? `{${body}}` : `(${body})`)(name + " : " + dom.toString(ctx, names, 0)),
+        goPi = (names, name, cod) => { let res;
+          const keepCtx = { ...ctx, env: [...ctx.env] }, ns = names.concat([name]);
+          if (cod.constructor.name !== "Pi") res = ` → ${cod.toString(ctx, ns, 1)}`;
+          else if (cod.name === "_" ) res = ` → ${cod.dom.toString(ctx, ns, 2)} → ${cod.cod.toString(ctx, ns.concat(["_"]), 1)}`;
+          else { const n = fresh(ns, cod.name); res = piBind(ns, n, cod.dom, cod.isImpl) + goPi(ns, n, cod.cod) }
+          Object.assign(ctx, keepCtx);
+          return res
+        },
+        str = name === "_" ? `${this.dom.toString(ctx, names, 2)} → ${this.cod.toString(ctx, names.concat(["_"]), 1)}` :
+          piBind(names, name, this.dom, this.isImpl) + goPi(names, name, this.cod);
+        return prec > 1 ? `(${str})` : str },
+      U () { return "U" },
+      Let (ctx, names = AST.names(ctx), prec = 0) { const
+        fresh = (names, name) => name === "_" ? "_" : names.reduce((acc, n) => new RegExp(`^${acc}[']*$`).test(n) ? n + "'" : acc, name),
+        name = fresh(names, this.name),
+        str = `let ${name} : ${this.type.toString(ctx, names, 0)}\n    = ${this.term.toString(ctx, names, 0)};\n${this.next.toString(ctx, names.concat([name]), 0)}`;
+        return prec > 0 ? `(${str})` : str },
+      Meta () { return `?${this.mvar}` },
+      AppPruning (ctx, names = AST.names(ctx), prec) {
+        const str = this.prun.reduce((str, mbIsImpl, i) => {
+          if (mbIsImpl === null) return str;
+          const name = names[i], prun = (name === "_" ? "@." + i : name);
+          return str + " " + (mbIsImpl ? `{${prun}}` : prun)
+        }, this.term.toString(ctx, names, prec));
+        return prec > 2 ? `(${str})` : str },
+      PostponedCheck (ctx, names = AST.names(ctx), prec = 0) { const problem = gctx.checks.get(this.checkvar);
+        switch (Object.keys(problem)[0]) {
+          case "unchecked": return problem.unchecked.ctx.prun.reduceRight((acc, mbIsImpl, i) => mbIsImpl === null ? acc : 
+            new this.AST.App(acc, new this.AST.Var(i), mbIsImpl), new this.AST.Meta(problem.unchecked.mvar)).toString(ctx, names, prec);
+          case "checked": return problem.checked.term.toString(names, prec) } },
 
-          MetaEntry (ctx) { return `let ?${this.mvar} = ${this.soln === null ? "?" : this.soln.toString(ctx) };` }
-        };
+      MetaEntry (ctx) { return `let ?${this.mvar} : ${this.solnTy.toString([])} = ${this.solnTm === null ? "?" : this.solnTm.toString(ctx, []) };` }
+    };
 
   class Parser {  // Rewrite as a bifunctor on state + fail?
     static seq (ps) { return state => ps.reduce((acc, p) => acc.then(p), Result.pure(state)) }
@@ -209,15 +225,18 @@ function VM (options = {}) {
             { ...t, data: t.data.reduce((func, [arg, nameIcit]) => new RApp({ func, arg, nameIcit, pos: this.setPos({ end: arg.pos[1] }) }), s.data) }) ])(state) },
 
         lamBinder (state) { return Parser.choice([
-          Parser.map(this.binder, ([ data, pos ]) => [ data, false, [state.pos, pos[1]] ]),
-          Parser.peek(Parser.map(this.region(this.binder, "braces"), ([ data, pos ]) => [ data, true, [state.pos, pos[1]] ])),
+          this.region(Parser.do([ this.binder, ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed explicit lambda") ]))(s),
+            ({}, s, t) => ({ ...t, data: [ s.data[0], false, t.data instanceof Array ? null : t.data, [state.pos, t.pos] ] }) ]), "parens"),
+          Parser.peek(this.region(Parser.do([ this.binder, ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed implicit lambda") ]))(s),
+            ({}, s, t) => ({ ...t, data: [ s.data[0], true, t.data instanceof Array ? null : t.data, [state.pos, t.pos] ] }) ]), "braces")),
           this.region(Parser.do([ this.ident, ({}, s) => Parser.seq([ this.keyword("="), this.cut(this.binder, "Malformed named implicit lambda") ])(s),
-            ({}, s, t) => ({ ...t, data: [ t.data[0], s.data, [state.pos, t.data[1]] ] }) ]), "braces") ])(state) },
+            ({}, s, t) => ({ ...t, data: [ t.data[0], s.data, null, [state.pos, t.data[1]] ] }) ]), "braces"),
+          Parser.map(this.binder, ([ data, pos ]) => [ data, false, null, [state.pos, pos[1]] ]) ])(state) },
         lam (state) { return Parser.do([ this.keyword("\\"),
           ({}, s) => Parser.many(this.lamBinder)(s),
           (x, y, s) => Parser.seq([ this.cut(this.keyword("."), "Lambda without body", { start: x.pos, end: y.pos }), this.term ])(s),
-          ({}, {}, s, t) => ({ ...t, data: s.data.reduceRight((body, [name, nameIcit, pos]) =>
-            new RLam({ name, nameIcit, body, pos: this.setPos({ start: pos[0] }) }), t.data) }) ])(state) },
+          ({}, {}, s, t) => ({ ...t, data: s.data.reduceRight((acc, [name, nameIcit, mbType, pos]) =>
+            new RLam(name, nameIcit, mbType, acc, this.setPos({ start: pos[0] })), t.data) }) ])(state) },
 
         piBinder (state) { let icitBinder = glyphs => this.region(Parser.do([ Parser.many(this.binder),
             ({}, s) => (tm => glyphs === "parens" ? tm : Parser.alt(tm, s => ({ ...s, data: new RHole({ pos: globalContext.pos }) })))
@@ -284,14 +303,15 @@ function VM (options = {}) {
         })[sw[k].constructor.name](sw[k])
       }
       return function (obj = {}) {
-        let branch = tree, _ = [], match, run = f => f.apply(this, [obj]);
-        decorate(obj);
-        scrutList: for (let argName of scrut) {
-          if (typeof argName !== "string") {
-            let [[ procArgName, fn ]] = Object.entries(argName);
-            obj[procArgName] = match = run(fn);
-          } else match = obj[argName];
-          let name = (n => n in branch ? n : "_")(match.constructor.name.toLowerCase());
+        let branch = tree, _ = [], run = f => f.apply(this, [obj]), s = [];
+        decorate.apply(this, [obj]);
+        for (let argName of scrut) if (typeof argName !== "string") {
+          let [[ procArgName, fn ]] = Object.entries(argName);
+          obj[procArgName] = run(fn);
+          s.push(procArgName)
+        } else s.push(argName);
+        scrutList: for (let argName of s) {
+          let name = (n => n in branch ? n : "_")(obj[argName].constructor.name.toLowerCase());
           if (name in branch) {
             inf: while (true) {
               let update = b => b[name];
@@ -334,7 +354,8 @@ function VM (options = {}) {
           let ({ term, env, ctx }) { return this.eval({ ctx, term: term.next, env: env.concat([ this.eval({ ctx, env, term: term.term }) ]) }) },
           u () { return new VU() },
           meta ({ term }) { return this.vMeta({ mvar: term.mvar }) },
-          insmeta ({ term, env, ctx }) { return this.vAppBDs({ ctx, env, val: this.vMeta({ mvar: term.mvar }), bds: term.bds }) }
+          apppruning ({ term, env, ctx }) { return this.vAppPruning({ ctx, env, val: this.eval({ ctx, term: term.term, env }), prun: term.prun }) },
+          postponedcheck ({ term, env, ctx }) { return this.vCheck({ ctx, env, checkvar: term.checkvar }) }
         }, { scrut: [ "term" ] }),
         cApp ({ ctx, cls: { term, env }, val }) { return this.eval({ ctx, term, env: env.concat([ val ]) }) },
         vApp: Evaluator.match({
@@ -343,8 +364,13 @@ function VM (options = {}) {
           vrigid ({ vfunc, varg, icit }) { return new VRigid({ lvl: vfunc.lvl, spine: vfunc.spine.concat([ [varg, icit] ]) }) },
         }, { scrut: [ "vfunc" ] }),
         vAppSp ({ ctx, val, spine }) { return spine.reduce((vfunc, [varg, icit]) => this.vApp({ ctx, vfunc, varg, icit }), val) },
-        vMeta ({ mvar }) { let e = globalContext.metas.get(mvar); return e === null ? new VFlex({ mvar, spine: [] }) : e },
-        vAppBDs ({ ctx, env, val, bds }) { return bds.reduce((acc, bd, i) => bd ? this.vApp({ ctx, vfunc: acc, varg: env[i], icit: false }) : acc, val) },
+        vMeta ({ mvar }) { let m = gctx.metas.get(mvar); return "val" in m ? m.val : new this.VFlex(mvar, []) },
+        vCheck ({ env, checkvar, ctx }) { const problem = gctx.checks.get(checkvar); return ({
+          unchecked: () => this.vAppPruning({ ctx, env, val: this.vMeta({ mvar: problem.unchecked.mvar }), prun: problem.unchecked.ctx.prun }),
+          checked: () => this.eval({ env, term: problem.checked.term })
+        })[Object.keys(problem)[0]]() },
+        vAppPruning ({ env, val, prun, ctx }) { return prun.reduce((acc, mbIsImpl, i) => mbIsImpl === null ? acc :
+          this.vApp({ ctx, vfunc: acc, varg: env[i], icit: mbIsImpl }), val) },
         
         quote: Evaluator.match({
           vflex ({ lvl, val, ctx }) { return this.quoteSp({ ctx, lvl, term: new Meta({ mvar: val.mvar }), spine: val.spine }) },
@@ -357,18 +383,63 @@ function VM (options = {}) {
         }, { scrut: [ "val" ] }),
         quoteSp ({ ctx, lvl, term, spine }) { return spine.reduce((func, [val, isImpl]) => new App({ func, arg: this.quote({ ctx, lvl, val }), isImpl }), term) },
         force ({ ctx, val }) { if (val.constructor.name === "VFlex") {
-          let e = globalContext.metas.get(val.mvar);
-          if (e !== null) return this.force({ ctx, val: this.vAppSp({ ctx, val: e, spine: val.spine }) })
+          const m = globalContext.metas.get(val.mvar);
+          if ("val" in m) return this.force({ ctx, val: this.vAppSp({ ctx, val: m.val, spine: val.spine }) })
         } return val },
 
-        ...(i => ({
-          nextMetaVar: () => i++,
-          reset: () => i = 0
-        }))(0),
-        freshMeta (ctx) {
-          let mvar = this.nextMetaVar();
-          globalContext.metas.set(mvar, null);
-          return { ctx, meta: new InsMeta({ mvar, bds: ctx.bds }) } },
+        ...((m, c) => ({
+          nextMetaVar: () => m++,
+          nextCheckVar: () => c++,
+          reset: () => { m = 0; c = 0 },
+        }))(0, 0),
+        newRawMeta ({ blocking, vtype }) {
+          const m = this.nextMetaVar();
+          gctx.metas.set(m, { blocking, vtype });
+          return m },
+        newMeta ({ vtype, ctx }) { return this.newRawMeta({ vtype: this.eval({ env: [], term: ctx.path.reduceRight((acc, entry) => ({
+          bind: () => new this.Pi(entry.bind.name, entry.bind.type, acc, false),
+          define: () => new this.Let(entry.define.name, entry.define.type, entry.define.term, acc),
+        })[Object.keys(entry)[0]](), this.quote({ lvl: ctx.lvl, val: vtype })) }), blocking: new Set() }) },
+        freshMeta ({ vtype, ctx }) { return new this.AppPruning(new this.Meta(this.newMeta({ vtype, ctx })), ctx.prun) },
+
+        ExpectedInferred: 0,
+        LamBinderType: 1,
+        Placeholder: 2,
+        unifyPlaceholder ({ term, mvar, ctx }) {
+          const m = gctx.metas.get(mvar);
+          if ("val" in m) {
+            debug.log("unify solved placeholder", m.val);
+            return this.unifyCatch({ val0: this.eval({ env: ctx.env, term }), val1: this.vAppPruning({ env: ctx.env, val: m.val, prun: ctx.prun }), unifyErr: this.Placeholder })
+          } else {
+            const solution = ctx.path.reduceRight((acc, entry) => ({
+              bind: () => new this.Lam(entry.bind.name, acc, false),
+              define: () => new this.Let(entry.define.name, entry.define.type, entry.define.term, acc),
+            })[Object.keys(entry)[0]](), term);
+            debug.log("solve unconstrained placeholder", solution);
+            gctx.metas.set(mvar, { vtype: m.vtype, val: this.eval({ env: [], term: solution }) });
+            return this.retryCheck({ blocking: m.blocking })
+          } },
+        retryCheck ({ blocking }) { return Array.from(blocking).reduce((res, block) => res.then(() => (problem => ({
+          unchecked: () => this.retryUnchecked({ checkvar: block, unchecked: problem.unchecked }),
+          checked: () => {}
+        })[Object.keys(problem)[0]]())(gctx.checks.get(block))), Result.pure()) },
+        retryUnchecked: Evaluator.match({
+          vflex ({ fvtype, checkvar }) { gctx.metas.get(fvtype.mvar).blocking.add(checkvar) },
+          _ ({ checkvar, unchecked }) { return this.check({ ctx: unchecked.ctx, rterm: unchecked.rterm, vtype: unchecked.vtype })
+            .then(({ ctx, term }) => this.unifyPlaceholder({ ctx, term, mvar: unchecked.mvar })
+              .then(() => gctx.checks.set(checkvar, { checked: { term } }))) }
+        }, { scrut: [ { fvtype ({ unchecked }) { return this.force({ val: unchecked.vtype }) } } ] }),
+        checkEverything ({ checkvar }) { return Array(checkvar).fill().reduce((res, _, c) => res.then(() => (problem => ({
+          unchecked: () => {
+            debug.log("checkEverything", c, checkvar);
+            return this.infer({ ctx: problem.unchecked.ctx, rterm: problem.unchecked.rterm })
+              .then(({ term, ctx }) => this.insertNeutral({ ctx, term }))
+              .then(({ term, vtype, ctx }) => {
+                gctx.checks.set(c, { checked: { term } });
+                return this.unifyCatch({ ctx, val0: problem.unchecked.vtype, val1: vtype, unifyErr: this.ExpectedInferred })
+                  .then(() => this.unifyPlaceholder({ ctx, term, mvar: problem.unchecked.mvar })) }) },
+          checked: () => {}
+        })[Object.keys(problem)[0]])(gctx.checks.get(c))), Result.pure()) },
         
         liftPRen ({ dom, cod, ren }) { return { dom: dom + 1, cod: cod + 1, ren: ren.set(cod, dom) } },
         invertPRen ({ lvl, spine }) { return spine.reduce((acc, [val]) => acc.then(([ dom, ren ], err) =>
@@ -503,7 +574,7 @@ function VM (options = {}) {
 
         doElab ({ rterm }) {
           this.reset();
-          return this.infer({ ctx: { env: [], types: [], bds: [], lvl: 0 }, rterm }).catch(this.displayError) },
+          return this.infer({ ctx: { env: [], names: new Map(), path: [], prun: [], lvl: 0 }, rterm }).catch(this.displayError) },
         normalForm ({ data: rterm }) {
           debug.log()("Expression normal form:");
           return this.doElab({ rterm })

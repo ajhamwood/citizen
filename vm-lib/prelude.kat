@@ -4,6 +4,7 @@ let I : Bit
     = \i o. i;
 let O : Bit
     = \i o. o;
+    
 let not : Bit -> Bit
     = \b i o. b o i;
 let and : Bit -> Bit -> Bit
@@ -15,17 +16,17 @@ let xor : Bit -> Bit -> Bit
 let if : {R} -> Bit -> R -> R -> R
     = \p a b. p a b;
 
-let Pair : {P} -> (A B : _) -> U
-    = \{P} A B. A -> B -> (A -> B -> P) -> P;
-let pair : {A B} -> Pair A B
+let Pair : {P} -> U -> U -> U
+    = \{P} A B. (A -> B -> P) -> P;
+let pair : {A B P} -> A -> B -> Pair {P} A B
     = \a b p. p a b;
-let fst : {A B} -> (P : (A -> B -> A) -> A) -> A
-    = \p. p (\a b. a);
-let snd : {A B} -> (P : (A -> B -> B) -> B) -> B
-    = \p. p (\a b. b);
+let fst : {A B} -> Pair A B -> A
+    = \s. s (\a b. a);
+let snd : {A B} -> Pair A B -> B
+    = \s. s (\a b. b);
 
-fst (pair I O)
+-- fst (pair I O)
 
--- let bitAdd : Bit -> Bit -> Bit -> Pair Bit Bit
---     = \a b c. pair (xor (xor a b) c) (or (and a b) (and c (xor a b)));
--- bitAdd O O O
+let bitAdd : Bit -> Bit -> Bit -> Pair Bit Bit
+    = \a b c. pair (or (and a b) (and c (xor a b))) (xor (xor a b) c);
+bitAdd I I O

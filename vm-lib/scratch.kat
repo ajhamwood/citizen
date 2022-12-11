@@ -1,8 +1,14 @@
-let Eq : {A : U} -> A -> A -> U
-    = \{A} x y. (P : A -> U) -> P x -> P y;
-let refl : {A : U}{x : A} -> Eq {A} x x
-    = \_ px. px;
-let the : (A : U) -> A -> A = \_ x. x;
-let m : (A : U)(B : U) -> U -> U -> U = _;
+let Bit : U
+    = {B} -> B -> B -> B;
+let I : Bit
+    = \i o. i;
+let O : Bit
+    = \i o. o;
 
-\a b. the (Eq (m a a) (\x y. y)) refl
+let Wrap : {P} -> U -> U
+    = \{P} A. (A -> P) -> P;
+let wrap : {A P} -> A -> Wrap {P} A
+    = \a p. p a;
+let test : Wrap Bit
+    = wrap I;
+test
