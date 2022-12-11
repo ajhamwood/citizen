@@ -4,7 +4,7 @@ let I : Bit
     = \i o. i;
 let O : Bit
     = \i o. o;
-    
+
 let not : Bit -> Bit
     = \b i o. b o i;
 let and : Bit -> Bit -> Bit
@@ -15,6 +15,10 @@ let xor : Bit -> Bit -> Bit
     = \x y i o. x (y o i) (y i o);
 let if : {R} -> Bit -> R -> R -> R
     = \p a b. p a b;
+let carry : Bit -> Bit -> Bit -> Bit
+    = \a b c. or (and a b) (and c (xor a b));
+let sum : Bit -> Bit -> Bit -> Bit
+    = \a b c. xor (xor a b) c;
 
 let Pair : {P} -> U -> U -> U
     = \{P} A B. (A -> B -> P) -> P;
@@ -28,5 +32,5 @@ let snd : {A B} -> Pair A B -> B
 -- fst (pair I O)
 
 let bitAdd : Bit -> Bit -> Bit -> Pair Bit Bit
-    = \a b c. pair (or (and a b) (and c (xor a b))) (xor (xor a b) c);
+    = \a b c. pair (carry a b c) (sum a b c);
 bitAdd I I O

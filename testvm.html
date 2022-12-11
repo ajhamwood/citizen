@@ -31,11 +31,11 @@ var testKat = async () => {
   appStart = performance.now();
   let data, err;
   try {
-    const { returnAll } = await VM({ debug: { showPhase: false } })
+    const { returnAll } = await VM({ debug: { showPhase: "evaluator" } })
       .import({ path: "vm-lib/scratch.kat", memory: null });
     data = await returnAll.run();
   } catch (e) { err = { message: e.message, stack: e.stack } }
-  if (err) tell.warn.call({ addr: "test" }, "Kat error", "\n" + err.message);
+  if (err) tell.error.call({ addr: "test" }, "Kat error", "\n" + err.message, err.stack);
   else {
     const s = data.toString();
     tell.log.call({ addr: "test" }, "Kat result", "\nTerm:", s.term, "\nType:", s.type,

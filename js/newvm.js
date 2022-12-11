@@ -48,7 +48,7 @@ function VM (options = {}) {
   }
 
   [ "RVar", "RLam", "RApp", "RU", "RPi", "RLet", "RHole",
-    "Var", "App", "Lam", "Pi", "U", "Let", "Meta", "InsMeta", "MetaEntry",
+    "Var", "App", "Lam", "Pi", "U", "Let", "Meta", "AppPruning", "PostponedCheck", "MetaEntry",
     "VRigid", "VFlex", "VLam", "VPi", "VU" ]
     .forEach(name => this[name] = ({ [name]: class extends AST {
       constructor (o) { super(o); if (name in prettyPrint) this.toString = prettyPrint[name] }
@@ -83,7 +83,7 @@ function VM (options = {}) {
         goLam = (names, name, body) => { let res;
           const keepCtx = { ...ctx, env: [...ctx.env] }, ns = names.concat([name]);
           if (body.constructor.name !== "Lam") res = `. ${body.toString(ctx, ns, 0)}`;
-          else { const n = this.fresh(ns, body.name); res = ` ${body.isImpl ? `{${n}}` : n}${goLam(ns, n, body.body)}` }
+          else { const n = fresh(ns, body.name); res = ` ${body.isImpl ? `{${n}}` : n}${goLam(ns, n, body.body)}` }
           Object.assign(ctx, keepCtx);
           return res
         },
@@ -118,10 +118,10 @@ function VM (options = {}) {
           return str + " " + (mbIsImpl ? `{${prun}}` : prun)
         }, this.term.toString(ctx, names, prec));
         return prec > 2 ? `(${str})` : str },
-      PostponedCheck (ctx, names = AST.names(ctx), prec = 0) { const problem = gctx.checks.get(this.checkvar);
+      PostponedCheck (ctx, names = AST.names(ctx), prec = 0) { const problem = globalContext.checks.get(this.checkvar);
         switch (Object.keys(problem)[0]) {
-          case "unchecked": return problem.unchecked.ctx.prun.reduceRight((acc, mbIsImpl, i) => mbIsImpl === null ? acc : 
-            new this.AST.App(acc, new this.AST.Var(i), mbIsImpl), new this.AST.Meta(problem.unchecked.mvar)).toString(ctx, names, prec);
+          case "unchecked": return problem.unchecked.ctx.prun.reduceRight((acc, mbIsImpl, ix) => mbIsImpl === null ? acc : 
+            new App({ func: acc, arg: new Var({ ix }), isImpl: mbIsImpl }), new Meta({ mvar: problem.unchecked.mvar })).toString(ctx, names, prec);
           case "checked": return problem.checked.term.toString(names, prec) } },
 
       MetaEntry (ctx) { return `let ?${this.mvar} : ${this.solnTy.toString([])} = ${this.solnTm === null ? "?" : this.solnTm.toString(ctx, []) };` }
@@ -236,7 +236,7 @@ function VM (options = {}) {
           ({}, s) => Parser.many(this.lamBinder)(s),
           (x, y, s) => Parser.seq([ this.cut(this.keyword("."), "Lambda without body", { start: x.pos, end: y.pos }), this.term ])(s),
           ({}, {}, s, t) => ({ ...t, data: s.data.reduceRight((acc, [name, nameIcit, mbType, pos]) =>
-            new RLam(name, nameIcit, mbType, acc, this.setPos({ start: pos[0] })), t.data) }) ])(state) },
+            new RLam({ name, nameIcit, mbType, body: acc, pos: this.setPos({ start: pos[0] }) }), t.data) }) ])(state) },
 
         piBinder (state) { let icitBinder = glyphs => this.region(Parser.do([ Parser.many(this.binder),
             ({}, s) => (tm => glyphs === "parens" ? tm : Parser.alt(tm, s => ({ ...s, data: new RHole({ pos: globalContext.pos }) })))
@@ -348,36 +348,36 @@ function VM (options = {}) {
       for (const [k, fn] of Object.entries({
         eval: Evaluator.match({
           var ({ term, env }) { return env[env.length - term.ix - 1] },
-          app ({ term, env, ctx }) { return this.vApp({ ctx, vfunc: this.eval({ ctx, term: term.func, env }), varg: this.eval({ ctx, term: term.arg, env }), icit: term.isImpl }) },
+          app ({ ctx, term, env }) { return this.vApp({ ctx, vfunc: this.eval({ ctx, term: term.func, env }), varg: this.eval({ ctx, term: term.arg, env }), icit: term.isImpl }) },
           lam ({ term, env }) { return new VLam({ name: term.name, cls: { term: term.body, env }, isImpl: term.isImpl }) },
-          pi ({ term, env, ctx }) { return new VPi({ name: term.name, dom: this.eval({ ctx, term: term.dom, env }), cls: { term: term.cod, env }, isImpl: term.isImpl }) },
-          let ({ term, env, ctx }) { return this.eval({ ctx, term: term.next, env: env.concat([ this.eval({ ctx, env, term: term.term }) ]) }) },
+          pi ({ ctx, term, env }) { return new VPi({ name: term.name, dom: this.eval({ ctx, term: term.dom, env }), cls: { term: term.cod, env }, isImpl: term.isImpl }) },
+          let ({ ctx, term, env }) { return this.eval({ ctx, term: term.next, env: env.concat([ this.eval({ ctx, env, term: term.term }) ]) }) },
           u () { return new VU() },
           meta ({ term }) { return this.vMeta({ mvar: term.mvar }) },
-          apppruning ({ term, env, ctx }) { return this.vAppPruning({ ctx, env, val: this.eval({ ctx, term: term.term, env }), prun: term.prun }) },
-          postponedcheck ({ term, env, ctx }) { return this.vCheck({ ctx, env, checkvar: term.checkvar }) }
+          apppruning ({ ctx, term, env }) { return this.vAppPruning({ ctx, env, val: this.eval({ ctx, term: term.term, env }), prun: term.prun }) },
+          postponedcheck ({ ctx, term, env }) { return this.vCheck({ ctx, env, checkvar: term.checkvar }) }
         }, { scrut: [ "term" ] }),
         cApp ({ ctx, cls: { term, env }, val }) { return this.eval({ ctx, term, env: env.concat([ val ]) }) },
         vApp: Evaluator.match({
-          vlam ({ vfunc, varg, ctx }) { return this.cApp({ ctx, cls: vfunc.cls, val: varg }) },
+          vlam ({ ctx, vfunc, varg }) { return this.cApp({ ctx, cls: vfunc.cls, val: varg }) },
           vflex ({ vfunc, varg, icit }) { return new VFlex({ mvar: vfunc.mvar, spine: vfunc.spine.concat([ [varg, icit] ]) }) },
           vrigid ({ vfunc, varg, icit }) { return new VRigid({ lvl: vfunc.lvl, spine: vfunc.spine.concat([ [varg, icit] ]) }) },
         }, { scrut: [ "vfunc" ] }),
         vAppSp ({ ctx, val, spine }) { return spine.reduce((vfunc, [varg, icit]) => this.vApp({ ctx, vfunc, varg, icit }), val) },
-        vMeta ({ mvar }) { let m = gctx.metas.get(mvar); return "val" in m ? m.val : new this.VFlex(mvar, []) },
-        vCheck ({ env, checkvar, ctx }) { const problem = gctx.checks.get(checkvar); return ({
+        vMeta ({ mvar }) { let m = globalContext.metas.get(mvar); return "val" in m ? m.val : new VFlex({ mvar, spine: [] }) },
+        vCheck ({ ctx, env, checkvar }) { const problem = globalContext.checks.get(checkvar); return ({
           unchecked: () => this.vAppPruning({ ctx, env, val: this.vMeta({ mvar: problem.unchecked.mvar }), prun: problem.unchecked.ctx.prun }),
-          checked: () => this.eval({ env, term: problem.checked.term })
+          checked: () => this.eval({ ctx, env, term: problem.checked.term })
         })[Object.keys(problem)[0]]() },
-        vAppPruning ({ env, val, prun, ctx }) { return prun.reduce((acc, mbIsImpl, i) => mbIsImpl === null ? acc :
+        vAppPruning ({ ctx, env, val, prun }) { return prun.reduce((acc, mbIsImpl, i) => mbIsImpl === null ? acc :
           this.vApp({ ctx, vfunc: acc, varg: env[i], icit: mbIsImpl }), val) },
         
         quote: Evaluator.match({
-          vflex ({ lvl, val, ctx }) { return this.quoteSp({ ctx, lvl, term: new Meta({ mvar: val.mvar }), spine: val.spine }) },
-          vrigid ({ lvl, val, ctx }) { return this.quoteSp({ ctx, lvl, term: new Var({ ix: lvl - val.lvl - 1 }), spine: val.spine }) },
-          vlam ({ lvl, val, ctx }) { return new Lam({ name: val.name,
+          vflex ({ ctx, lvl, val }) { return this.quoteSp({ ctx, lvl, term: new Meta({ mvar: val.mvar }), spine: val.spine }) },
+          vrigid ({ ctx, lvl, val }) { return this.quoteSp({ ctx, lvl, term: new Var({ ix: lvl - val.lvl - 1 }), spine: val.spine }) },
+          vlam ({ ctx, lvl, val }) { return new Lam({ name: val.name,
             body: this.quote({ ctx, lvl: lvl + 1, val: this.cApp({ ctx, cls: val.cls, val: new VRigid({ lvl, spine: [] }) }) }), isImpl: val.isImpl }) },
-          vpi ({ lvl, val, ctx }) { return new Pi({ name: val.name, dom: this.quote({ ctx, lvl, val: val.dom }),
+          vpi ({ ctx, lvl, val }) { return new Pi({ name: val.name, dom: this.quote({ ctx, lvl, val: val.dom }),
             cod: this.quote({ ctx, lvl: lvl + 1, val: this.cApp({ ctx, cls: val.cls, val: new VRigid({ lvl, spine: [] }) }) }), isImpl: val.isImpl }) },
           vu () { return new U() }
         }, { scrut: [ "val" ] }),
@@ -394,117 +394,188 @@ function VM (options = {}) {
         }))(0, 0),
         newRawMeta ({ blocking, vtype }) {
           const m = this.nextMetaVar();
-          gctx.metas.set(m, { blocking, vtype });
+          globalContext.metas.set(m, { blocking, vtype });
           return m },
-        newMeta ({ vtype, ctx }) { return this.newRawMeta({ vtype: this.eval({ env: [], term: ctx.path.reduceRight((acc, entry) => ({
-          bind: () => new this.Pi(entry.bind.name, entry.bind.type, acc, false),
-          define: () => new this.Let(entry.define.name, entry.define.type, entry.define.term, acc),
-        })[Object.keys(entry)[0]](), this.quote({ lvl: ctx.lvl, val: vtype })) }), blocking: new Set() }) },
-        freshMeta ({ vtype, ctx }) { return new this.AppPruning(new this.Meta(this.newMeta({ vtype, ctx })), ctx.prun) },
+        newMeta ({ ctx, vtype }) { return this.newRawMeta({ vtype: this.eval({ ctx, env: [], term: ctx.path.reduceRight((acc, entry) => ({
+          bind: () => new Pi({ name: entry.bind.name, dom: entry.bind.type, cod: acc, isImpl: false }),
+          define: () => new Let({ name: entry.define.name, type: entry.define.type, term: entry.define.term, next: acc }),
+        })[Object.keys(entry)[0]](), this.quote({ ctx, lvl: ctx.lvl, val: vtype })) }), blocking: new Set() }) },
+        freshMeta ({ ctx, vtype }) { return { meta: new AppPruning({ term: new Meta({ mvar: this.newMeta({ ctx, vtype }) }), prun: ctx.prun }) } },
 
         ExpectedInferred: 0,
         LamBinderType: 1,
         Placeholder: 2,
-        unifyPlaceholder ({ term, mvar, ctx }) {
-          const m = gctx.metas.get(mvar);
+        unifyPlaceholder ({ ctx, term, mvar }) {
+          const m = globalContext.metas.get(mvar);
           if ("val" in m) {
             debug.log("unify solved placeholder", m.val);
-            return this.unifyCatch({ val0: this.eval({ env: ctx.env, term }), val1: this.vAppPruning({ env: ctx.env, val: m.val, prun: ctx.prun }), unifyErr: this.Placeholder })
+            return this.unifyCatch({ ctx, val0: this.eval({ ctx, env: ctx.env, term }), val1: this.vAppPruning({ ctx, env: ctx.env, val: m.val, prun: ctx.prun }), unifyErr: this.Placeholder })
           } else {
             const solution = ctx.path.reduceRight((acc, entry) => ({
-              bind: () => new this.Lam(entry.bind.name, acc, false),
-              define: () => new this.Let(entry.define.name, entry.define.type, entry.define.term, acc),
+              bind: () => new Lam({ name: entry.bind.name, body: acc, isImpl: false }),
+              define: () => new Let({ name: entry.define.name, type: entry.define.type, term: entry.define.term, next: acc }),
             })[Object.keys(entry)[0]](), term);
             debug.log("solve unconstrained placeholder", solution);
-            gctx.metas.set(mvar, { vtype: m.vtype, val: this.eval({ env: [], term: solution }) });
+            globalContext.metas.set(mvar, { vtype: m.vtype, val: this.eval({ ctx, env: [], term: solution }) });
             return this.retryCheck({ blocking: m.blocking })
           } },
         retryCheck ({ blocking }) { return Array.from(blocking).reduce((res, block) => res.then(() => (problem => ({
           unchecked: () => this.retryUnchecked({ checkvar: block, unchecked: problem.unchecked }),
           checked: () => {}
-        })[Object.keys(problem)[0]]())(gctx.checks.get(block))), Result.pure()) },
+        })[Object.keys(problem)[0]]())(globalContext.checks.get(block))), Result.pure()) },
         retryUnchecked: Evaluator.match({
-          vflex ({ fvtype, checkvar }) { gctx.metas.get(fvtype.mvar).blocking.add(checkvar) },
+          vflex ({ fvtype, checkvar }) { globalContext.metas.get(fvtype.mvar).blocking.add(checkvar) },
           _ ({ checkvar, unchecked }) { return this.check({ ctx: unchecked.ctx, rterm: unchecked.rterm, vtype: unchecked.vtype })
             .then(({ ctx, term }) => this.unifyPlaceholder({ ctx, term, mvar: unchecked.mvar })
-              .then(() => gctx.checks.set(checkvar, { checked: { term } }))) }
-        }, { scrut: [ { fvtype ({ unchecked }) { return this.force({ val: unchecked.vtype }) } } ] }),
+              .then(() => globalContext.checks.set(checkvar, { checked: { term } }))) }
+        }, { scrut: [ { fvtype ({ unchecked }) { return this.force({ ctx, val: unchecked.vtype }) } } ] }),
         checkEverything ({ checkvar }) { return Array(checkvar).fill().reduce((res, _, c) => res.then(() => (problem => ({
           unchecked: () => {
             debug.log("checkEverything", c, checkvar);
             return this.infer({ ctx: problem.unchecked.ctx, rterm: problem.unchecked.rterm })
               .then(({ term, ctx }) => this.insertNeutral({ ctx, term }))
               .then(({ term, vtype, ctx }) => {
-                gctx.checks.set(c, { checked: { term } });
+                globalContext.checks.set(c, { checked: { term } });
                 return this.unifyCatch({ ctx, val0: problem.unchecked.vtype, val1: vtype, unifyErr: this.ExpectedInferred })
                   .then(() => this.unifyPlaceholder({ ctx, term, mvar: problem.unchecked.mvar })) }) },
           checked: () => {}
-        })[Object.keys(problem)[0]])(gctx.checks.get(c))), Result.pure()) },
+        })[Object.keys(problem)[0]])(globalContext.checks.get(c))), Result.pure()) },
         
-        liftPRen ({ dom, cod, ren }) { return { dom: dom + 1, cod: cod + 1, ren: ren.set(cod, dom) } },
-        invertPRen ({ lvl, spine }) { return spine.reduce((acc, [val]) => acc.then(([ dom, ren ], err) =>
-          (fval => fval.constructor.name === "VRigid" && fval.spine.length === 0 && !ren.has(fval.lvl) ?
-            [ dom + 1, ren.set(fval.lvl, dom) ] : err({ msg: "Unification error: Must substitute on unblocked variable" }))(this.force({ val }))),
-          Result.pure([ 0, new Map() ])).then(([ dom, ren ]) => ({ dom, cod: lvl, ren })) },
+        liftPRen: ({ occ, dom, cod, ren }) => ({ occ, dom: dom + 1, cod: cod + 1, ren: new Map(ren).set(cod, dom) }),
+        skipPRen: ({ occ, dom, cod, ren }) => ({ occ, dom, cod: cod + 1, ren }),
+        invertPRen ({ ctx, lvl, spine }) { return spine.reduce((acc, [val, isImpl]) => acc.then(([ dom, domvars, ren, prun, isLinear ], err) => { const fval = this.force({ ctx, val });
+          return fval.constructor.name !== "VRigid" || fval.spine.length !== 0 ?
+            err({ msg: "Unification error: Must substitute on unblocked variable" }) : domvars.has(fval.lvl) ?
+              [ dom + 1, domvars, (ren.delete(fval.lvl), ren), prun.concat([null]), false ] :
+              [ dom + 1, domvars.add(fval.lvl), ren.set(fval.lvl, dom), prun.concat([isImpl]), isLinear ] }),
+          Result.pure([ 0, new Set(), new Map(), [], true ])).then(([ dom, {}, ren, prun, isLinear ]) =>
+            ({ pren: { occ: null, dom, cod: lvl, ren }, mbPrun: isLinear ? prun : null })) },
+
+        pruneTy ({ ctx, revPrun, vtype }) { return revPrun.reduce((res, mbIsImpl) => res.then(([go, val, pren, fval = this.force({ ctx, val })], err) => {
+          if (fval.constructor.name !== "VPi") return err({ msg: "Internal error: type too low arity for given pruning" });
+          const appVal = this.cApp({ ctx, cls: fval.cls, val: new VRigid({ lvl: pren.cod, spine: [] }) });
+          return mbIsImpl === null ? [ go, appVal, this.skipPRen(pren) ] :
+            this.rename({ ctx, pren, val: fval }).then(({ rhs: dom }) => [ cod => go(new Pi({ name: fval.name, dom, cod, isImpl: fval.isImpl })), appVal, this.liftPRen(pren) ]) }),
+          Result.pure([tm => tm, vtype, { occ: null, dom: 0, cod: 0, ren: new Map() }]))
+            .then(([go, vt, pr]) => this.rename({ ctx, pren: pr, val: vt }).then(({ rhs: tm }) => go(tm))) },
+        pruneMeta ({ ctx, prun, mvar }) {
+          const { blocking, vtype } = globalContext.metas.get(mvar);
+          if (typeof blocking === "undefined") return Result.throw({ msg: "Internal error: meta already solved while pruning" });
+          return this.pruneTy({ ctx, revPrun: prun.reverse(), vtype }).then(prtype => {
+            const newMvar = this.newRawMeta({ blocking, vtype: this.eval({ ctx, env: [], term: prtype }) });
+            return this.lams({ ctx, lvl: prun.length, vtype, term: new AppPruning({ term: new Meta(newMvar), prun }) }).then(term => {
+              globalContext.metas.set(mvar, { vtype, val: this.eval({ ctx, env: [], term }) });
+              return newMvar
+            })}) },
+        pruneVFlex: ((OKRenaming, OKNonRenaming, NeedsPruning) => function ({ ctx, pren, mvar, spine }) {
+          return spine.reduce((acc, [val, icit]) => acc.then(([sp, status], err) => { const fval = this.force({ ctx, val });
+            if (fval.constructor.name !== "VRigid" || fval.spine.length !== 0)
+              return status === NeedsPruning ? err({ msg: "Unification error: can only prune with variables" }) :
+                this.rename({ ctx, pren, val: fval }).then(({ rhs }) => [ sp.concat([ [rhs, icit] ]), OKNonRenaming ]);
+            else { const mbLvl = pren.ren.get(fval.lvl);
+              return (typeof mbLvl === "number") ? [ sp.concat([ [new Var({ ix: pren.dom - mbLvl - 1 }), icit] ]), status ] :
+                status !== OKNonRenaming ? [sp.concat([ [null, icit] ]), NeedsPruning] :
+                  err({ msg: "Unification error: can only prune renamings" }) } }), Result.pure([ [], OKRenaming ]))
+            .then(([ sp, status ]) => (status === NeedsPruning ? this.pruneMeta({ ctx, prun: sp.map(([mbTm, icit]) => mbTm === null ? null : icit), mvar }) :
+              "val" in globalContext.metas.get(mvar) ? Result.throw({ msg: "Internal error: meta already solved while pruning a flex variable" }) : Result.pure(mvar))
+              .then(mv => ({ ctx, rhs: sp.reduceRight((func, [mbTm, isImpl]) => mbTm === null ? func : new App({ func, arg: mbTm, isImpl }), new Meta({ mvar: mv })) }))) })
+          (Symbol("OKRenaming"), Symbol("OKNonRenaming"), Symbol("NeedsPruning")),
+
+        renameSp ({ ctx, pren, term, spine }) { return spine.reduce((acc, [val, isImpl]) =>
+          acc.then(func => this.rename({ ctx, val, pren }).then(({ rhs: arg }) => new App({ func, arg, isImpl }))), Result.pure(term)).then(rhs => ({ ctx, rhs })) },
         rename: Evaluator.match({
-          vflex: [ { guard: ({ mvar, fval }) => mvar === fval.mvar, clause: () => Result.throw({ message: "Unification error: Occurs check" }) },
-            { guard: () => true, clause ({ ctx, mvar, pren, fval }) { return fval.spine.reduce((acc, [val, isImpl]) => acc.then(({ rhs: func }) => this.rename({ ctx, mvar, pren, val })
-              .then(({ rhs: arg }) => ({ctx, rhs: new App({ func, arg, isImpl }) }))), Result.pure({ ctx, rhs: new Meta({ mvar: fval.mvar }) })) } } ],
-          vrigid ({ ctx, mvar, pren, fval }) { return !pren.ren.has(fval.lvl) ? Result.throw({ msg: "Unification error: Variable escapes scope" }) :
-            fval.spine.reduce((acc, [val, isImpl]) => acc.then(({ rhs: func }) => this.rename({ ctx, mvar, pren, val })
-              .then(({ rhs: arg }) => ({ ctx, rhs: new App({ func, arg, isImpl }) }) )), Result.pure({ ctx, rhs: new Var({ ix: pren.dom - pren.ren.get(fval.lvl) - 1 }) })) },
-          vlam ({ ctx, mvar, pren, fval }) { return this.rename({ ctx, mvar, pren: this.liftPRen(pren),
+          vflex ({ ctx, pren, fval }) { return pren.occ === fval.mvar ? Result.throw({ msg: "Unification error: Occurs check" }) :
+            this.pruneVFlex({ ctx, pren, mvar: fval.mvar, spine: fval.spine }) },
+          vrigid ({ ctx, pren, fval }) { return !pren.ren.has(fval.lvl) ? Result.throw({ msg: "Unification error: Variable escapes scope" }) :
+            this.renameSp({ ctx, pren, spine: fval.spine, term: new Var({ ix: pren.dom - pren.ren.get(fval.lvl) - 1 }) }) },
+          vlam ({ ctx, pren, fval }) { return this.rename({ ctx, pren: this.liftPRen(pren),
             val: this.cApp({ ctx, cls: fval.cls, val: new VRigid({ lvl: pren.cod, spine: [] }) }) })
             .then(({ rhs: body }) => ({ ctx, rhs: new Lam({ name: fval.name, body, isImpl: fval.isImpl }) })) },
-          vpi ({ ctx, mvar, pren, fval }) { return this.rename({ ctx, mvar, pren, val: fval.dom })
-              .then(({ rhs: dom }) => this.rename({ ctx, mvar, pren: this.liftPRen(pren),
+          vpi ({ ctx, pren, fval }) { return this.rename({ ctx, pren, val: fval.dom })
+              .then(({ rhs: dom }) => this.rename({ ctx, pren: this.liftPRen(pren),
                 val: this.cApp({ ctx, cls: fval.cls, val: new VRigid({ lvl: pren.cod, spine: [] }) }) })
                 .then(({ rhs: cod }) => ({ ctx, rhs: new Pi({ name: fval.name, dom, cod, isImpl: fval.isImpl }) }))) },
           vu ({ ctx }) { return Result.pure({ ctx, rhs: new U() }) }
         }, { scrut: [ { fval ({ ctx, val }) { return this.force({ ctx, val }) } } ] }),
+        lams ({ lvl, vtype, term, ctx }) { return Array(lvl).fill().reduce((res, _, i) => res.then(([go, val, fval = this.force({ ctx, val })], err) =>
+          fval.constructor.name !== "VPi" ? err({ msg: "Internal error: type too low arity for given lambda wrapping number" }) :
+            [ body => go(new Lam({ name: fval.name === "_" ? "x" + i : fval.name, body, isImpl: fval.isImpl })), this.cApp({ ctx, cls: fval.cls, val: new VRigid({ lvl: i, spine: [] }) }) ]),
+          Result.pure([s => s, vtype])).then(([go]) => go(term)) },
+        solve ({ ctx, lvl, mvar, spine, val }) { return this.invertPRen({ ctx, lvl, spine })
+          .then(({ pren, mbPrun }) => this.solveWithPRen({ ctx, lvl, mvar, pren, mbPrun, val })) },
+        solveWithPRen ({ ctx, lvl, mvar, pren, mbPrun, val }) {  // lvl is only for debugging
+          debug.log("solve", mvar, this.quote({ ctx, lvl, val }));
+          const { blocking, vtype } = globalContext.metas.get(mvar);
+          return (typeof blocking === "undefined" ? Result.throw({ msg: "Internal error: meta already solved" }) : mbPrun === null ? Result.pure() :
+            this.pruneTy({ ctx, revPrun: mbPrun.reverse(), vtype })).then(() => this.rename({ ctx, pren: Object.assign(pren, { occ: mvar }), val }))
+            .then(({ rhs }) => this.lams({ ctx, lvl: pren.dom, vtype, term: rhs }).then(term => globalContext.metas.set(mvar, { vtype, val: this.eval({ ctx, env: [], term }) })))
+            .then(() => this.retryCheck({ blocking })) },
 
-        solve ({ ctx, lvl, mvar, spine, val }) { return this.invertPRen({ lvl, spine })
-          .then(pren => this.rename({ ctx, mvar, pren, val })
-            .then(({ rhs }) => { globalContext.metas.set(mvar,
-              this.eval({ ctx, term: (body => { for (let i = 0; i < spine.length; i++)
-                body = new Lam({ name: `x${i}`, body, isImpl: spine[i][1] }); return body })(rhs), env: [] })) })) },
+        flexFlex ({ ctx, lvl, mvar0, spine0, mvar1, spine1 }) {
+          if (spine0.length < spine1.length) [ mvar0, spine0, mvar1, spine1 ] = [ mvar1, spine1, mvar0, spine0 ];
+          let res;
+          return this.invertPRen({ ctx, lvl, spine: spine0 })
+            .then(({ pren, mbPrun }) => res = this.solveWithPRen({ ctx, lvl, mvar: mvar0, pren, mbPrun, val: new VFlex({ mvar: mvar1, spine: spine1 }) }))
+            .catch(() => res ?? this.solve({ ctx, lvl, mvar: mvar1, spine: spine1, val: new VFlex({ mvar: mvar0, spine: spine0 }) })) },
+
+        intersect ({ ctx, lvl, mvar, spine0, spine1 }) {
+          if (spine0.length !== spine1.length) return Result.throw({ err: "Internal error: intersecting with uneven spines" });
+          else return Result.pure(spine0.reduce((acc, [val0, icit0], i) => {
+            const [ val1 ] = spine1[i], fval0 = this.force({ ctx, val: val0 }), fval1 = this.force({ ctx, val: val1 });
+            return fval0.constructor.name !== "VRigid" || fval0.spine.length !== 0 || fval1.constructor.name !== "VRigid" || fval1.spine.length !== 0 ||
+              acc === null ? null : acc.concat([ fval0.lvl === fval1.lvl ? icit0 : null ])
+          }, [])).then(mbPrun => mbPrun === null ? this.unifySp({ ctx, lvl, spine0, spine1 }) :
+            mbPrun.includes(null) ? this.pruneMeta({ ctx, prun: mbPrun, mvar }).then(() => {}) : undefined) },
+
         unify: Evaluator.match({
+          "vu vu": () => Result.pure(),
+          "vpi vpi" ({ ctx, lvl, fval0, fval1 }) { return fval0.isImpl !== fval1.isImpl ? Result.throw({ msg: "Unification error: Rigid mismatch" }) :
+            this.unify({ ctx, lvl, val0: fval0.dom, val1: fval1.dom }).then(() => this.unify({ ctx, lvl: lvl + 1,
+              val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ lvl, spine: [] }) }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ lvl, spine: [] }) }) })) },
+          "vrigid vrigid": [ { guard ({ fval0, fval1 }) { return fval0.lvl === fval1.lvl },
+            clause ({ ctx, lvl, fval0, fval1 }) { return this.unifySp({ ctx, lvl, spine0: fval0.spine, spine1: fval1.spine }) } } ],
+          "vflex vflex": [ { guard ({ fval0, fval1 }) { return fval0.mvar === fval1.mvar },
+            clause ({ ctx, lvl, fval0, fval1 }) { return this.intersect({ ctx, lvl, mvar: fval0.mvar, spine0: fval0.spine, spine1: fval1.spine }) } },
+            { guard: () => true, clause ({ lvl, fval0, fval1 }) {
+              return this.flexFlex({ ctx, lvl, mvar0: fval0.mvar, spine0: fval0.spine, mvar1: fval1.mvar, spine1: fval1.spine }) } } ],
           "vlam vlam" ({ ctx, lvl, fval0, fval1 }) { return this.unify({ ctx, lvl: lvl + 1,
             val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ lvl, spine: [] }) }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ lvl, spine: [] }) }) }) },
           "vlam _" ({ ctx, lvl, fval0, fval1 }) { return this.unify({ ctx, lvl: lvl + 1, val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ lvl, spine: [] }) }),
               val1: this.vApp({ ctx, vfunc: fval1, varg: new VRigid({ lvl, spine: [] }), icit: fval0.isImpl }) }) },
-          "vpi vpi" ({ ctx, lvl, fval0, fval1 }) { return fval0.isImpl !== fval1.isImpl ? Result.throw({ msg: "Unification error: Rigid mismatch" }) :
-            this.unify({ ctx, lvl, val0: fval0.dom, val1: fval1.dom }).then(() => this.unify({ ctx, lvl: lvl + 1,
-              val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ lvl, spine: [] }) }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ lvl, spine: [] }) }) })) },
-          "vu vu" () { return Result.pure() },
-          "vrigid vrigid": [ { guard ({ fval0, fval1 }) { return fval0.lvl === fval1.lvl },
-            clause ({ ctx, lvl, fval0, fval1 }) { return this.unifySp({ ctx, lvl, sp0: fval0.spine, sp1: fval1.spine }) } } ],
-          "vflex vflex": [ { guard ({ fval0, fval1 }) { return fval0.mvar === fval1.mvar },
-            clause ({ ctx, lvl, fval0, fval1 }) { return this.unifySp({ ctx, lvl, sp0: fval0.spine, sp1: fval1.spine }) } } ],
           "vflex _": [ { guard ({ fval1 }) { return fval1.constructor.name !== "VLam" },
             clause ({ ctx, lvl, fval0, fval1 }) { return this.solve({ ctx, lvl, mvar: fval0.mvar, spine: fval0.spine, val: fval1 }) } } ],
           "_" ({ ctx, lvl, fval0, fval1 }) { return fval1.constructor.name === "VLam" ? this.unify({ ctx, lvl: lvl + 1,
             val0: this.vApp({ ctx, vfunc: fval0, varg: new VRigid({ lvl, spine: [] }), icit: fval1.isImpl }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ lvl, spine: [] }) }) }) :
             fval1.constructor.name === "VFlex" ? this.solve({ ctx, lvl, mvar: fval1.mvar, spine: fval1.spine, val: fval0 }) :
               Result.throw({ msg: "Unification error: Rigid mismatch" }) }
-        }, { scrut: [ { fval0 ({ ctx, val0 }) { return this.force({ ctx, val: val0 }) } }, { fval1 ({ ctx, val1 }) { return this.force({ ctx, val: val1 }) } } ] }),
-        unifySp ({ ctx, lvl, sp0, sp1 }) { if (sp0.length !== sp1.length) return Result.throw({ msg: "Unification error: Rigid mismatch" })
-          else return sp0.reduce((acc, [val0], i) => acc.then(() => this.unify({ ctx, lvl, val0, val1: sp1[i][0] })), Result.pure()) },
+        }, { decorate ({ ctx, lvl, val0, val1 }) { debug.log("unify", this.quote({ ctx, lvl, val: val0 }), this.quote({ ctx, lvl, val: val1 })) },
+             scrut: [ { fval0 ({ ctx, val0 }) { return this.force({ ctx, val: val0 }) } }, { fval1 ({ ctx, val1 }) { return this.force({ ctx, val: val1 }) } } ] }),
+        unifySp ({ ctx, lvl, spine0, spine1 }) { if (spine0.length !== spine1.length) return Result.throw({ msg: "Unification error: Rigid mismatch" })
+          else return spine0.reduce((acc, [val0], i) => acc.then(() => this.unify({ ctx, lvl, val0, val1: spine1[i][0] })), Result.pure()) },
 
         bind ({ ctx, name, vtype, isNewBinder = false }) { return { ...ctx,
           env: ctx.env.concat([ new VRigid({ lvl: ctx.lvl, spine: [] }) ]),
-          types: ctx.types.concat([[ name, vtype, isNewBinder ]]),
-          lvl: ctx.lvl + 1, bds: ctx.bds.concat([1]) } },
-        define ({ ctx, name, val, vtype }) { return { ...ctx,
+          names: isNewBinder ? ctx.names : new Map(ctx.names).set(name, [ ctx.lvl, vtype ]),
+          lvl: ctx.lvl + 1, prun: ctx.prun.concat([false]),
+          path: ctx.path.concat([{ bind: { name, type: this.quote({ ctx, lvl: ctx.lvl, val: vtype }) } }]) } },
+        define ({ ctx, name, term, val, type, vtype }) { return { ...ctx,
           env: ctx.env.concat([ val ]),
-          types: ctx.types.concat([[ name, vtype, false ]]),
-          lvl: ctx.lvl + 1, bds: ctx.bds.concat([0]) } },
-        closeVal ({ ctx, val }) { return { term: this.quote({ ctx, val, lvl: ctx.lvl + 1 }), env: ctx.env } },
+          names: new Map(ctx.names).set(name, [ ctx.lvl, vtype ]),
+          lvl: ctx.lvl + 1, prun: ctx.prun.concat([null]),
+          path: ctx.path.concat([{ define: { name, type, term } }]) } },
 
-        unifyCatch ({ ctx, val0, val1 }) { return this.unify({ ctx, lvl: ctx.lvl, val0, val1 }).catch((e, err) => e.msg.slice(0, 17) !== "Unification error" ? err(e) :
-          err({ msg: `${e.msg}\nCan't unify\n    ${this.quote({ ctx, lvl: ctx.lvl, val: val0 }).toString(ctx)}\nwith\n    ${this.quote({ ctx, lvl: ctx.lvl, val: val1 }).toString(ctx)}\n` })) },
+        unifyCatch ({ ctx, val0, val1, unifyErr }) {
+          return this.unify({ ctx, lvl: ctx.lvl, val0, val1 }).catch((e, err) => {
+            if (e.msg.slice(0, 17) !== "Unification error") return err(e);
+            let msg0 = "", msg1 = "";
+            switch (unifyErr) {
+              case this.Placeholder: msg0 = " value"; msg1 = " expected value"; break;
+              case this.ExpectedInferred: msg0 = " expected type"; msg1 = " inferred type"; break;
+              case this.LamBinderType: msg0 = " expected lambda binder type"; msg1 = " given type annotation" }
+            return err({ msg: `${e.msg}\nCan't unify${msg0}\n    ${this.quote({ ctx, lvl: ctx.lvl, val: val0 }).toString(ctx)
+              }\nwith${msg1}\n    ${this.quote({ ctx, lvl: ctx.lvl, val: val1 }).toString(ctx)}\n` }) }) },
         insert: Evaluator.match({
-          vpi: [ { guard: ({ fvtype }) => fvtype.isImpl, clause ({ ctx, term, fvtype }) { return Result.pure(this.freshMeta(ctx))
+          vpi: [ { guard: ({ fvtype }) => fvtype.isImpl, clause ({ ctx, term, fvtype }) { return Result.pure(this.freshMeta({ ctx, vtype: fvtype.dom }))
             .then(({ meta }) => this.insert({ ctx, term: new App({ func: term, arg: meta, isImpl: true }),
               vtype: this.cApp({ ctx, cls: fvtype.cls, val: this.eval({ ctx, term: meta, env: ctx.env }) }) })) } } ],
           _: ({ ctx, term, fvtype }) => Result.pure({ ctx, term, vtype: fvtype })
@@ -515,49 +586,64 @@ function VM (options = {}) {
         }, { scrut: [ "term" ] }),
         insertUntil: Evaluator.match({
           vpi: [ { guard: ({ fvtype }) => fvtype.isImpl , clause ({ ctx, name, term, fvtype }) { return fvtype.name === name ? Result.pure({ ctx, term, vtype: fvtype }) :
-            Result.pure(this.freshMeta(ctx)).then(({ meta }) => this.insertUntil({ ctx, term: new App({ func: term, arg: meta, isImpl: true }),
+            Result.pure(this.freshMeta({ ctx, vtype: fvtype.dom })).then(({ meta }) => this.insertUntil({ ctx, term: new App({ func: term, arg: meta, isImpl: true }),
               vtype: this.cApp({ ctx, cls: fvtype.cls, val: this.eval({ ctx, term: meta, env: ctx.env }) }), name })) } } ],
           _: () => Result.throw({ msg: "Elaboration error: No named implicit argument" })
         }, { scrut: [ { fvtype ({ ctx, vtype }) { return this.force({ ctx, val: vtype }) } } ] }),
         check: Evaluator.match({
           "rlam vpi": [ {
-            guard ({ rterm, vtype }) { return rterm.nameIcit === vtype.isImpl || rterm.nameIcit === vtype.name && vtype.isImpl },
-            clause ({ ctx, rterm, vtype }) { return this.check({ ctx: this.bind({ ctx, name: rterm.name, vtype: vtype.dom }),
-              rterm: rterm.body, vtype: this.cApp({ ctx, cls: vtype.cls, val: new VRigid({ lvl: ctx.lvl, spine: [] }) }) })
-              .then(({ term }) => ({ ctx, term: new Lam({ name: rterm.name, body: term, isImpl: vtype.isImpl }) })) } } ],
-          "rlet _": [ { guard: ({ vtype }) => vtype.constructor.name !== "VPi",
-            clause ({ ctx, rterm, vtype }) { return this.check({ ctx, rterm: rterm.type, vtype: new VU() }).then(({ term: type }) => {
+            guard: ({ rterm, fvtype }) => rterm.nameIcit === fvtype.isImpl || rterm.nameIcit === fvtype.name && fvtype.isImpl,
+            clause ({ ctx, rterm, fvtype }) { return (rterm.mbType === null ? Result.pure() : this.check({ ctx, rterm: rterm.mbType, vtype: new VU() })
+              .then(({ ctx, term: type }) => this.unifyCatch({ ctx, val0: this.eval({ ctx, env: ctx.env, term: type }), val1: fvtype.dom, unifyErr: this.LamBinderType })))
+              .then(() => this.check({ ctx: this.bind({ ctx, name: rterm.name, vtype: fvtype.dom }), rterm: rterm.body, vtype: this.cApp({ ctx, cls: fvtype.cls, val: new VRigid({ lvl: ctx.lvl, spine: [] }) }) }))
+              .then(({ term: body }) => ({ ctx, term: new Lam({ name: rterm.name, body, isImpl: fvtype.isImpl }) })) } } ],
+          "rvar vpi": [ {
+            guard ({ ctx, rterm, fvtype }) { const mbVtype = ctx.names.get(rterm.name)?.[1];
+              return fvtype.isImpl && typeof mbVtype !== "undefined" && this.force({ ctx, val: mbVtype }).constructor.name === "VFlex" },
+            clause ({ ctx, rterm, fvtype }) { const [ lvl, val ] = ctx.names.get(rterm.name);
+              return this.unify({ ctx, lvl: ctx.lvl, val0: this.force({ ctx, val }), val1: fvtype }).then(() => new VRigid({ lvl: ctx.lvl - lvl - 1, spine: [] })) } } ],
+          "rlet _": [ { guard: ({ fvtype }) => !["VPi", "VFlex"].includes(fvtype.constructor.name),
+            clause ({ ctx, rterm, fvtype }) { return this.check({ ctx, rterm: rterm.type, vtype: new VU() }).then(({ term: type }) => {
               let cvtype = this.eval({ ctx, term: type, env: ctx.env });
               return this.check({ ctx, rterm: rterm.term, vtype: cvtype })
-                .then(({ term }) => this.check({ ctx: define({ ctx, name: term.name, val: this.eval({ ctx, term, env: ctx.env }), vtype: cvtype }), rterm: rterm.next, vtype })
-                  .then(({ term: next }) => ({ ctx, term: this.Let({ name: rterm.name, type, term, next }) }))) }) } } ],
-          "rhole _": [ { guard: ({ vtype }) => vtype.constructor.name !== "VPi", clause ({ ctx }) { return Result.pure({ ctx, term: this.freshMeta(ctx).meta }) } } ],
+                .then(({ term }) => this.check({ ctx: define({ ctx, name: term.name, val: this.eval({ ctx, term, env: ctx.env }), vtype: cvtype }), rterm: rterm.next, vtype: fvtype })
+                  .then(({ term: next }) => ({ ctx, term: Let({ name: rterm.name, type, term, next }) }))) }) } } ],
+          "rhole _": [ { guard: ({ fvtype }) => !["VPi", "VFlex"].includes(fvtype.constructor.name), clause ({ ctx, fvtype }) { return Result.pure({ ctx, term: this.freshMeta({ ctx, vtype: fvtype }).meta }) } } ],
           _: [ { guard: ({ vtype }) => vtype.constructor.name === "VPi" && vtype.isImpl,
             clause ({ ctx, rterm, vtype }) { return this.check({ ctx: this.bind({ ctx, name: vtype.name, vtype: vtype.dom, isNewBinder: true }),
               rterm, vtype: this.cApp({ ctx, cls: vtype.cls, val: new VRigid({ lvl: ctx.lvl, spine: [] }) }) })
                 .then(({ term: body }) => ({ ctx, term: new Lam({ name: vtype.name, body, isImpl: true }) })) } },
+            { guard: ({ fvtype }) => fvtype.constructor.name === "VFlex",
+              clause ({ rterm, fvtype }) {
+                const checkvar = this.nextCheckVar(), keepCtx = Object.fromEntries(Object.entries(ctx).map(([k, v]) => ([k, v instanceof Array ? v.slice() :
+                  v instanceof Map ? new Map(v) : v])));
+                gctx.checks.set(checkvar, { unchecked: { ctx: keepCtx, rterm, vtype: fvtype, mvar: this.newMeta({ ctx, vtype: fvtype }) } });
+                gctx.metas.get(fvtype.mvar).blocking.add(checkvar);
+                return Result.pure(new PostponedCheck({ checkvar })) } },
             { guard: () => true, clause ({ ctx, rterm, vtype }) { return this.infer({ ctx, rterm }).then(s => this.insertNeutral({ ...s, ctx }))
-              .then(({ term, vtype: ivtype }) => this.unifyCatch({ ctx, lvl: ctx.lvl, val0: vtype, val1: ivtype }).then(() => ({ ctx, term }))) } } ]
-        }, { decorate: ({ rterm }) => globalContext.pos = rterm.pos, scrut: [ "rterm", "vtype" ] }),
+              .then(({ term, vtype: ivtype }) => this.unifyCatch({ ctx, lvl: ctx.lvl, val0: vtype, val1: ivtype, unifyErr: this.ExpectedInferred }).then(() => ({ ctx, term }))) } } ]
+        }, { decorate: ({ rterm }) => globalContext.pos = rterm.pos, scrut: [ "rterm", { fvtype ({ ctx, vtype }) { return this.force({ ctx, val: vtype }) } } ] }),
         infer: Evaluator.match({
-          rvar ({ ctx, rterm }) { return (ix => ~ix ? Result.pure({ ctx, term: new Var({ ix: ctx.lvl - ix - 1 }), vtype: ctx.types[ix][1] }) :
-            Result.throw({ msg: `Elaboration error: Name not in scope "${rterm.name}"` }))
-              (ctx.types.findLastIndex(([n, {}, isNB]) => n === rterm.name && !isNB)) },
-          rlam: [ { guard: ({ rterm }) => typeof rterm.nameIcit === "string", clause: () => Result.throw({ msg: "Elaboration error: Cannot infer a named lambda" }) },
-            { guard: () => true, clause ({ ctx, rterm }) { let vtype = this.eval({ ctx, env: ctx.env, term: this.freshMeta(ctx).meta });
-              return this.infer({ ctx: this.bind({ ctx, name: rterm.name, vtype }), rterm: rterm.body }).then(s => this.insertNeutral({ ...s, ctx }))
-                .then(({ term, vtype: ivtype }) => ({ ctx, term: new Lam({ name: rterm.name, body: term, isImpl: rterm.nameIcit }),
-                  vtype: new VPi({ name: rterm.name, dom: vtype, cls: this.closeVal({ ctx, val: ivtype }), isImpl: rterm.nameIcit }) })) } } ],
-          rapp ({ ctx, rterm }) { return (ni => { switch (ni) {
+          rvar ({ ctx, rterm }) { let mbLvlVtype = ctx.names.get(rterm.name);
+            return typeof mbLvlVtype === "undefined" ? Result.throw({ msg: `Elaboration error: Name not in scope "${rterm.name}"` }) :
+              Result.pure({ ctx, term: new Var({ ix: ctx.lvl - mbLvlVtype[0] - 1 }), vtype: mbLvlVtype[1] }) },
+          rlam: [ { guard: ({ rterm }) => typeof rterm.nameIcit === "string", clause: () => Result.throw({ msg: "Elaboration error: Cannot infer type for lambda with named argument" }) },
+            { guard: () => true, clause ({ ctx, rterm }) { return (this.mbType === null ?
+              Result.pure({ ctx, term: this.freshMeta({ ctx, vtype: new VU() }).meta }) : this.check({ ctx, rterm: this.mbType, vtype: new VU() }))
+              .then(({ ctx, term }) => this.eval({ ctx, env: ctx.env, term }))
+              .then(({ ctx, vtype }) => this.infer({ ctx: this.bind({ ctx, name: rterm.name, vtype }), rterm: rterm.body }).then(this.insertNeutral)
+                .then(({ ctx, term: body, vtype: ivtype }) => ({ ctx, term: new Lam({ name: rterm.name, body, isImpl: rterm.nameIcit }),
+                  vtype: new VPi({ name: rterm.name, dom: vtype, cls: { term: this.quote({ ctx, val: ivtype, lvl: ctx.lvl + 1 }), env: ctx.env }, isImpl: rterm.nameIcit }) }))) } } ],
+          rapp ({ ctx, rterm }) { return (nameIcit => { switch (nameIcit) {
             case true: return this.infer({ ctx, rterm: rterm.func }).then(s => ({ ...s, isImpl: true }));
             case false: return this.infer({ ctx, rterm: rterm.func }).then(s => this.insert({ ...s, ctx })).then(s => ({ ...s, isImpl: false }));
-            default: return this.infer({ ctx, rterm: rterm.func }).then(s => this.insertUntil({ ...s, ctx, name: ni })).then(s => ({ ...s, isImpl: true}))
+            default: return this.infer({ ctx, rterm: rterm.func }).then(s => this.insertUntil({ ...s, ctx, name: nameIcit })).then(s => ({ ...s, isImpl: true}))
           } })(rterm.nameIcit).then(({ isImpl, term, vtype }) => (fvtype => {
             if (fvtype.constructor.name === "VPi") return isImpl === fvtype.isImpl ? Result.pure([ fvtype.dom, fvtype.cls ]) :
               Result.throw({ msg: "Elaboration error: Implicit/explicit mismatch" });
-            else { let dom = this.eval({ ctx, env: ctx.env, term: this.freshMeta(ctx).meta });
-              return Result.pure(this.freshMeta(this.bind({ ctx, name: "x", vtype: dom }))).then(({ meta }) => ({ term: meta, env: ctx.env }))
-                .then(cls => this.unifyCatch({ ctx, val0: new VPi({ name: "x", dom, cls, isImpl }), val1: vtype }).then(() => [ dom, cls ])) } })(this.force({ ctx, val: vtype }))
+            else { let dom = this.eval({ ctx, env: ctx.env, term: this.freshMeta({ ctx, vtype: new VU() }).meta });
+              return Result.pure(this.freshMeta({ ctx: this.bind({ ctx, name: "x", vtype: dom }), vtype: new VU() })).then(({ meta }) => ({ term: meta, env: ctx.env }))
+                .then(cls => this.unifyCatch({ ctx, val0: new VPi({ name: "x", dom, cls, isImpl }), val1: vtype, unifyErr: this.ExpectedInferred }).then(() => [ dom, cls ])) } })(this.force({ ctx, val: vtype }))
             .then(([ dom, cls ]) => this.check({ ctx, rterm: rterm.arg, vtype: dom })
               .then(({ term: arg }) => ({ ctx, term: new App({ func: term, arg, isImpl }), vtype: this.cApp({ ctx, cls, val: this.eval({ ctx, env: ctx.env, term: arg }) }) })))) },
           ru ({ ctx }) { return Result.pure({ ctx, term: new U(), vtype: new VU() }) },
@@ -567,14 +653,17 @@ function VM (options = {}) {
           rlet ({ ctx, rterm }) { return this.check({ ctx, rterm: rterm.type, vtype: new VU() }).then(({ term: type }) => {
             let cvtype = this.eval({ ctx, term: type, env: ctx.env });
             return this.check({ ctx, rterm: rterm.term, vtype: cvtype })
-              .then(({ term }) => this.infer({ ctx: this.define({ ctx, name: rterm.name, val: this.eval({ ctx, term, env: ctx.env }), vtype: cvtype }), rterm: rterm.next })
+              .then(({ term }) => this.infer({ ctx: this.define({ ctx, name: rterm.name, term, val: this.eval({ ctx, term, env: ctx.env }), type, vtype: cvtype }), rterm: rterm.next })
                 .then(({ term: next, vtype }) => ({ ctx, term: new Let({ name: rterm.name, type, term, next }), vtype }))) }) },
-          rhole ({ ctx }) { return Result.pure({ ctx, vtype: this.eval({ ctx, env: ctx.env, term: this.freshMeta(ctx).meta }), term: this.freshMeta(ctx).meta }) }
+          rhole ({ ctx }) { const vtype = this.eval({ ctx, env: ctx.env, term: this.freshMeta({ ctx, vtype: new VU() }).meta });
+          return Result.pure({ ctx, vtype, term: this.freshMeta({ ctx, vtype }) }) }
         }, { decorate: ({ rterm }) => globalContext.pos = rterm.pos, scrut: [ "rterm" ] }),
 
         doElab ({ rterm }) {
           this.reset();
-          return this.infer({ ctx: { env: [], names: new Map(), path: [], prun: [], lvl: 0 }, rterm }).catch(this.displayError) },
+          return this.infer({ ctx: { env: [], names: new Map(), path: [], prun: [], lvl: 0 }, rterm })
+            .then(res => this.checkEverything({ checkvar: this.nextCheckVar() }).then(() => res))
+            .catch(this.displayError) },
         normalForm ({ data: rterm }) {
           debug.log()("Expression normal form:");
           return this.doElab({ rterm })
@@ -604,7 +693,7 @@ function VM (options = {}) {
           let lines = globalContext.source.split(/\r\n?|\n/);
           return err({ message: `${msg}\n${lines[globalContext.pos[0][0] - 1]}\n${"-".repeat(globalContext.pos[0][1] - 1)}${
             "^".repeat(globalContext.pos[1][1] - globalContext.pos[0][1])} ${globalContext.pos.join("-")}` }) }
-      })) this[k] = debug(["normalForm", "typecheck", "elaborate"].includes(k) ?
+      })) this[k] = debug(["normalForm", "typecheck", "elaborate", "returnAll"].includes(k) ?
         function (...args) { phase = "evaluator"; return fn.apply(this, args) } : fn, k, this)
     }
   }
