@@ -40,9 +40,9 @@ $.targets({
     new ResizeObserver(() => viz.emit('resize')).observe($("svg"));
 
     let { instance } = await testWasm(testModules.fib);
-    tell.log.call(citizen, "Wasm fib test", instance.exports.factorial(8n));
+    tell.log.call(citizen, "Wasm fib test", instance.exports.factorial(8));
 
-    await testKat()
+    // await testKat()
   },
   keyup (e) { if ($("#simSelect").validity.valid) {
     switch (e.keyCode) {
@@ -100,7 +100,7 @@ $.targets({
     },
 
     async editorRun (memory) {
-      let term, type, ctx, err, log = $("#log")
+      let term, type, ctx, err, log = $("#log");
       try {
         const { normalForm } = await VM().import({ code: $("#source").value, memory });
         ({ term, type, ctx } = await normalForm.run());

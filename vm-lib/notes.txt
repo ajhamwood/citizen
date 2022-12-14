@@ -3,30 +3,27 @@
 ---------------------
 
 
-let Bit : U
-    = {B} -> B -> B -> B;
-let I : Bit
-    = \i o. i;
-let O : Bit
-    = \i o. o;
+let Nat : U    = {N} -> N -> (N -> N) -> N;
+let zero : Nat = \z s. z;
+let suc : Nat -> Nat = \n z s. s (n z s);
 
-let and : Bit -> Bit -> Bit
-    = \x y i o. x (y i o) (x i o);
-let or : Bit -> Bit -> Bit
-    = \x y i o. x (x i o) (y i o);
-let xor : Bit -> Bit -> Bit
-    = \x y i o. x (y o i) (y i o);
-let carry : Bit -> Bit -> Bit -> Bit
-    = \a b c. or (and a b) (and c (xor a b));
-let sum : Bit -> Bit -> Bit -> Bit
-    = \a b c. xor (xor a b) c;
+let Bit : U    = {B} -> B -> B -> B;
+let I : Bit    = \i o. i;
+let O : Bit    = \i o. o;
 
-let Pair : {P} -> U -> U -> U
-    = \{P} A B. (A -> B -> P) -> P;
-let pair : {A B P} -> A -> B -> Pair {P} A B
-    = \a b p. p a b;
+let Tree : {n} -> U -> U
+    = \{n} A. (T: Nat -> U) -> (A -> A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
+let leaf : {A} -> A -> A -> Tree {zero} A
+    = \a b T l n. l a b;
+let node : {n A} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A
+    = \ta tb T l n. n (ta T l n) (tb T l n);
 
-(\a b c. pair (carry a b c) (sum a b c)) I I O
+-- node (node (leaf I O) (leaf O I)) (node (leaf O I) (leaf I O))
+
+let initWord : (m : Nat) -> Tree {m} Bit
+    = \m. m (leaf {A=Bit} O O) (\k. node {A=Bit} (initWord k) (initWord k));
+
+initWord (suc zero)
 
 
 ---------------------------------------------

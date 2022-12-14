@@ -1,0 +1,109 @@
+let Wrap : {W} -> U -> U
+    = \{W} A. (A -> W) -> W;
+let wrap : {A W} -> A -> Wrap {W} A
+    = \a w. w a;
+
+let Nat : U    = (N : U) -> (N -> N) -> N -> N;
+let zero : Nat = \N s z. z;
+let suc : Nat -> Nat = \n N s z. s (n N s z);
+
+let Vec : {n} -> U -> U
+    = \{n} A. (V : Nat -> U) -> V zero -> ({m : Nat} -> A -> V m -> V (suc m)) -> V n;
+let nil : {A} -> Vec {zero} A
+    = \V n c. n;
+let cons : {n A} -> A -> Vec {n} A -> Vec {suc n} A
+    = \a as V n c. c a (as V n c);
+
+let Tree : {n} -> U -> U
+    = \{n} A. (T: Nat -> U) -> (A -> A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
+let leaf : {A} -> A -> A -> Tree {zero} A
+    = \a b T l n. l a b;
+let node : {n A} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A
+    = \ta tb T l n. n (ta T l n) (tb T l n);
+
+
+
+let Bit : U
+    = (B : U) -> B -> B -> B;
+let I : Bit
+    = \B i o. i;
+let O : Bit
+    = \B i o. o;
+
+let not : Bit -> Bit
+    = \b B i o. b B o i;
+
+let Maybe : U -> U
+    = \A. (M : U) -> M -> (A -> M) -> M;
+let Nothing : {A} -> Maybe A
+    = \M n j. n;
+let Just : {A} -> A -> Maybe A
+    = \a M n j. j a;
+
+let Functor : (U -> U) -> U
+    = \(F : U -> U). {T A} -> ((map : {B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
+let maybeEndofunctor : Functor Maybe
+    = \f. f (\fn ma M n j. ma M n (\x. j (fn x)));
+
+maybeEndofunctor (\map. map not (Just O))
+
+
+
+let initWord : (n : Nat) -> Tree {n} Bit
+    = \n. n (\k T l n. n () ()) (leaf {A=Bit} O O);  -- needs recursion
+initWord (suc (suc zero))
+
+
+
+let Bit : U
+    = {B : U} -> B -> B -> B;
+let I : Bit
+    = \i o. i;
+let O : Bit
+    = \i o. o;
+
+let not : Bit -> Bit
+    = \b i o. b o i;
+let if : {R} -> Bit -> R -> R -> R
+    = \p a b. p a b;
+
+let Pair : {P} -> U -> U -> U
+    = \{P} A B. (A -> B -> P) -> P;
+let pair : {A B P} -> A -> B -> Pair {P} A B
+    = \a b p. p a b;
+let fst : {A B} -> Pair A B -> A
+    = \s. s (\a b. a);
+let snd : {A B} -> Pair A B -> B
+    = \s. s (\a b. b);
+
+let Nat : U    = {N} -> (N -> N) -> N -> N;
+let zero : Nat = \s z. z;
+let suc : Nat -> Nat = \n s z. s (n s z);
+
+let mul : Nat -> Nat -> Nat = \a b s z. a (b s) z;
+let eqz : Nat -> Bit = \n. n (\z i o. o) (\i o. i);
+let pred : Nat -> Nat =
+    \n. snd {Nat} (n (\p. pair (suc (fst p)) (fst p)) (pair zero zero));
+
+let Fix : {F} -> (U -> U) -> U
+    = \{F} A. ((A : U -> U) -> F) -> F;
+let fix : (A : U -> U) -> Fix A
+    = \a fix. a (fix a);
+
+let fact : Fix _
+    = fix (\fn n. if (eqz n) (suc zero) (mul n (fn (pred n))));
+
+fact (\f. f zero)
+
+
+
+-- Causes unifyPlaceholder error (tries to vApp with mvar:8, a VPi)
+let Fix : {F} -> U -> U
+    = \{F} A. ((A -> A) -> F) -> F;
+let fix : {A} -> (A -> A) -> Fix A
+    = \f x. f (x f);
+
+let fact : _
+    = fix (\fn n. _);
+
+fact (\f. f (\s z. z))

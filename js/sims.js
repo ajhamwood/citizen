@@ -29,23 +29,8 @@ var sims = {
         yield "Create a smart contract";
         nodes.forEach(node => node.worker.postMessage({ type: "votingAwait" }));
         // await new Promise(ok => setTimeout(ok, 500));
-        const code = dedent`
-          let the : (A : _) -> A -> A = \\_ x. x;
-
-          let Nat : U
-              = {N : U} -> (N -> N) -> N -> N;
-          let mul : Nat -> Nat -> Nat
-              = \\a b s z. a (b s) z;
-          let three : Nat
-              = \\s z. s (s (s z));
-          let nine = mul three three;
-
-          let Eq : {A} -> A -> A -> U
-              = \\{A} x y. (P : A -> U) -> P x -> P y;
-          let refl : {A}{x : A} -> Eq x x
-              = \\_ px. px;
-
-          the (Eq (mul three three) nine) refl`;
+        
+        const code = await fetch("vm-lib/prelude.kat").then(rsp => rsp.text());
         node0.worker.postMessage({ type: "doBroadcastTx", data: { code }});
 
         yield "Voting phase: **preprepare**";
@@ -120,7 +105,7 @@ var testModules = (() => {
   return {
     fib: module([
       type_section([
-        func_type([ i64 ], i64)  // type index = 0
+        func_type([ i32 ], i32)  // type index = 0
       ]),
       function_section([
         varuint32(0)  // function index = 0, using type index 0
@@ -132,13 +117,13 @@ var testModules = (() => {
       code_section([
         // Body of function at index 0
         function_body([ /* local variables */ ], [
-          if_(i64,  // Result type of "if" expression
-            i64.eq(get_local(i64, 0), i64.const(0)),  // Condition
-            [ i64.const(1) ],  // Then
-            [ i64.mul(  // Else
-              get_local(i64, 0),
-              call(i64, varuint32(0), [  // 0 is the function index
-                i64.sub(get_local(i64, 0), i64.const(1))
+          if_(i32,  // Result type of "if" expression
+            i32.eq(get_local(i32, 0), i32.const(0)),  // Condition
+            [ i32.const(1) ],  // Then
+            [ i32.mul(  // Else
+              get_local(i32, 0),
+              call(i32, varuint32(0), [  // 0 is the function index
+                i32.sub(get_local(i32, 0), i32.const(1))
               ])
             ) ]
           )

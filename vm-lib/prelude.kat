@@ -29,8 +29,6 @@ let fst : {A B} -> Pair A B -> A
 let snd : {A B} -> Pair A B -> B
     = \s. s (\a b. b);
 
--- fst (pair I O)
-
 let bitAdd : Bit -> Bit -> Bit -> Pair Bit Bit
     = \a b c. pair (carry a b c) (sum a b c);
-bitAdd I I O
+bitAdd I O O

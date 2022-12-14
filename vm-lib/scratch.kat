@@ -1,23 +1,23 @@
-let List   : U -> U                       = \A. (L : U) -> L -> (A -> L -> L) -> L;
-let nil    : {A} -> List A                = \L n c. n;
-let cons   : {A} -> A -> List A -> List A = \a as L n c. c a (as L n c);
-let Bool   : U                            = (B : U) -> B -> B -> B;
-let true   : Bool                         = \b t f. t;
-let Pair   : U -> U -> U                  = \A B. (P : U) -> (A -> B -> P) -> P;
-let pair   : {A B} -> A -> B -> Pair A B  = \a b P p. p a b;
-let Nat    : U                            = (N : U) -> (N -> N) -> N -> N;
-let zero   : Nat                          = \N s z. z;
-let map    : {A B} -> (A -> B) -> List A -> List B = \f as L n c. as L n (\a. c (f a));
-let Id     : U -> U                       = \A. (I : U) -> (A -> I) -> I;
-let mkId   : {A} -> A -> Id A             = \a I f. f a;
-let unId   : {A} -> Id A -> A             = \i. i _ (\x. x);
-let IdTy   : U                            = {A} -> A -> A;
-let single : {A} -> A -> List A           = \a. cons a nil;
-let id     : {A} -> A -> A                = \a. a;
-let oneId  : Id IdTy                      = mkId id;
-let poly   : IdTy -> Pair Nat Bool        = \f. pair (f zero) (f true);
+let Bit : U
+    = (B : U) -> B -> B -> B;
+let I : Bit
+    = \B i o. i;
+let O : Bit
+    = \B i o. o;
 
-let C9 = map poly (single id);
-let C10 = map unId (single oneId);
+let not : Bit -> Bit
+    = \b B i o. b B o i;
 
-C9
+let Maybe : U -> U
+    = \A. (M : U) -> M -> (A -> M) -> M;
+let Nothing : {A} -> Maybe A
+    = \M n j. n;
+let Just : {A} -> A -> Maybe A
+    = \a M n j. j a;
+
+let Functor : (U -> U) -> U
+    = \(F : U -> U). {T A} -> ((map : {B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
+let maybeEndofunctor : Functor Maybe
+    = \f. f (\fn ma M n j. ma M n (\x. j (fn x)));
+
+maybeEndofunctor (\map. map not (Just O))

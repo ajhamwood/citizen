@@ -8,7 +8,7 @@
   <style>body { background: black }</style>
 </head>
 <body data-section="nodeView">
-  <script src="js/newvm.js"></script>
+  <script src="js/testvm.js"></script>
   <script>
 function getTime () { let d = performance.now() - appStart;
   return isNaN(d) ? "0000000" : String(d < 0 ? 1e7 + d : d).padStart(7, '0') }
@@ -31,7 +31,7 @@ var testKat = async () => {
   appStart = performance.now();
   let data, err;
   try {
-    const { returnAll } = await VM({ debug: { showPhase: "evaluator" } })
+    const { returnAll } = await VM({ debug: { showPhase: false } })
       .import({ path: "vm-lib/scratch.kat", memory: null });
     data = await returnAll.run();
   } catch (e) { err = { message: e.message, stack: e.stack } }

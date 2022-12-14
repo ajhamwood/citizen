@@ -10,7 +10,7 @@ const logLevels = { error: true, warn: true, log: true, info: false, debug: fals
           if (prop === "error") {
             console.error(...message);
             throw Object.assign(new Error(""), { stack: lastArg })
-          } else console[prop](...message, lastArg);
+          } else console[prop](...message, ...(lastArg ? [lastArg] : []));
         };
         else return () => {}
       } }),
