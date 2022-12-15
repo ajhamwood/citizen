@@ -34,7 +34,7 @@ var testKat = async () => {
     const { returnAll } = await VM({ debug: { showPhase: false } })
       .import({ path: "vm-lib/scratch.kat", memory: null });
     data = await returnAll.run();
-  } catch (e) { err = { message: e.message, stack: e.stack } }
+  } catch (e) { /*console.log(e);*/ err = { message: e.message, stack: e.stack } }
   if (err) tell.error.call({ addr: "test" }, "Kat error", "\n" + err.message, err.stack);
   else {
     const s = data.toString();

@@ -74,7 +74,8 @@ function VM (options = {}) {
       RHole () { return `{?}` },
 
       Var (ctx, names = AST.names(ctx)) { const lvl = names.length - this.ix - 1;
-        if (lvl >= 0) { const str = names[lvl]; return str === "_" ? "@" + this.ix : str }
+        if (lvl >= names.length) return "@" + this.ix;
+        else if (lvl >= 0) { const str = names[lvl]; return str === "_" ? "@" + this.ix : str }
         else return `#${-1 - lvl}` },
       App (ctx, names = AST.names(ctx), prec = 0) {
         const str = `${this.func.toString(ctx, names, 2)} ${this.isImpl ? `{${this.arg.toString(ctx, names, 0)}}` : this.arg.toString(ctx, names, 3)}`;
@@ -376,7 +377,7 @@ function VM (options = {}) {
         
         quote: Evaluator.match({
           vflex ({ ctx, lvl, val }) { return this.quoteSp({ ctx, lvl, term: new Meta({ mvar: val.mvar }), spine: val.spine }) },
-          vrigid ({ ctx, lvl, val }) { return this.quoteSp({ ctx, lvl, term: new Var({ ix: lvl - val.lvl - 1 }), spine: val.spine }) },
+          vrigid ({ ctx, lvl, val }) { /*console.log("here", lvl, val.lvl);*/ return this.quoteSp({ ctx, lvl, term: new Var({ ix: lvl - val.lvl - 1 }), spine: val.spine }) },
           vlam ({ ctx, lvl, val }) { return new Lam({ name: val.name,
             body: this.quote({ ctx, lvl: lvl + 1, val: this.cApp({ ctx, cls: val.cls, val: new VRigid({ lvl, spine: [] }) }) }), isImpl: val.isImpl }) },
           vpi ({ ctx, lvl, val }) { return new Pi({ name: val.name, dom: this.quote({ ctx, lvl, val: val.dom }),
@@ -598,7 +599,7 @@ function VM (options = {}) {
               .then(({ term: body }) => ({ ctx, term: new Lam({ name: rterm.name, body, isImpl: fvtype.isImpl }) })) } } ],
           "rvar vpi": [ {
             guard ({ ctx, rterm, fvtype }) { const mbVtype = ctx.names.get(rterm.name)?.[1];
-              return fvtype.isImpl && typeof mbVtype !== "undefined" && this.force({ ctx, val: mbVtype }).constructor.name === "VFlex" },
+              return fvtype.isImpl && typeof mbVtype !== "undefined" && this.force({ ctx, val: mbVtype }).constructor.name === "VFlex" },  // repeated work
             clause ({ ctx, rterm, fvtype }) { const [ lvl, val ] = ctx.names.get(rterm.name);
               return this.unify({ ctx, lvl: ctx.lvl, val0: this.force({ ctx, val }), val1: fvtype }).then(() => ({ ctx, term: new Var({ ix: ctx.lvl - lvl - 1, spine: [] }) })) } } ],
           "rlet _": [ { guard: ({ fvtype }) => !["VPi", "VFlex"].includes(fvtype.constructor.name),

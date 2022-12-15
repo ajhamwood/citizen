@@ -1,23 +1,33 @@
-let Bit : U
-    = (B : U) -> B -> B -> B;
-let I : Bit
-    = \B i o. i;
-let O : Bit
-    = \B i o. o;
+let Bit : U = {B} -> B -> B -> B;
+let I : Bit = \i o. i;
+let O : Bit = \i o. o;
 
-let not : Bit -> Bit
-    = \b B i o. b B o i;
+let Nat : U    = {N} -> (N -> N) -> N -> N;
+let zero : Nat = \s z. z;
+let suc : Nat -> Nat = \n s z. s (n s z);
 
-let Maybe : U -> U
-    = \A. (M : U) -> M -> (A -> M) -> M;
-let Nothing : {A} -> Maybe A
-    = \M n j. n;
-let Just : {A} -> A -> Maybe A
-    = \a M n j. j a;
+let Pair : U -> U -> U
+    = \A B. {P} -> (A -> B -> P) -> P;
+let pair : {A B} -> A -> B -> Pair A B
+    = \a b p. p a b;
+let fst : {A B} -> Pair A B -> A
+    = \s. s (\a b. a);
+let snd : {A B} -> Pair A B -> B
+    = \s. s (\a b. b);
 
-let Functor : (U -> U) -> U
-    = \(F : U -> U). {T A} -> ((map : {B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
-let maybeEndofunctor : Functor Maybe
-    = \f. f (\fn ma M n j. ma M n (\x. j (fn x)));
+let fold : {A} -> (Nat -> A -> A) -> A -> Nat -> A
+    = \{A} r base n. snd {Nat} (n {Pair Nat A}
+        (\p. pair (suc (fst p)) (r (fst p) (snd p)))
+        (pair zero base));
 
-maybeEndofunctor (\map. map not (Just O))
+let Tree : {n} -> U -> U
+    = \{n} A. (T: Nat -> U) -> (A -> A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
+let leaf : {A} -> A -> A -> Tree {zero} A
+    = \a b T l n. l a b;
+let node : {n A} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A
+    = \ta tb T l n. n (ta T l n) (tb T l n);
+
+let initWord : (n : Nat) -> Tree {n} Bit
+    = \n. fold {Tree {n} Bit} (\k acc. node {k}{Bit} acc acc) (leaf {Bit} O O) n;
+
+initWord zero
