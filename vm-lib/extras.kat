@@ -33,9 +33,9 @@ let just : {A} -> A -> Maybe A
     = \a n j. j a;
 
 let Functor : (U -> U) -> U
-    = \(F : U -> U). {T A} -> ((map : {B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
+    = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
 let maybeFunctor : Functor Maybe
-    = \f. f (\fn ma n j. ma n (\x. j (fn x)));
+    = \f. f (\fn ma n j. ma n (\a. j (fn a)));
 
 maybeFunctor (\map. map not (just O))
 
@@ -50,15 +50,26 @@ let zero : Nat = \s z. z;
 let suc : Nat -> Nat = \n s z. s (n s z);
 
 let Tree : {n} -> U -> U
-    = \{n} A. (T: Nat -> U) -> (A -> A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
+    = \{n} A. (T : Nat -> U) -> (A -> A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
 let leaf : {A} -> A -> A -> Tree {zero} A
     = \a b T l n. l a b;
-let node : {n A} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A
+let node : {A n} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A
     = \ta tb T l n. n (ta T l n) (tb T l n);
+-- eliminators
 
-let initWord : (n : Nat) -> Tree {n} Bit
-    = \n. fold {Tree {n} Bit} (\k acc. node {k}{Bit} acc acc) (leaf {Bit} O O) n;
-initWord (suc (suc zero))
+let Functor : (U -> U) -> U
+    = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
+let treeFunctor : Functor Tree
+    = \f. f (\fn ta T l n. ta T (\a b. l (fn a) (fn b)) n);
+
+let foldtree : {A} -> (T : Nat -> U) -> (A -> A -> T zero) ->
+               ({m} -> T m -> T m -> T (suc m)) -> {n} -> Tree {n} A -> T n
+    = \T l n tree. tree T l n;
+let maptree : {A B n} -> (A -> B) -> Tree {n} A -> Tree {n} B
+    = \{A}{B} fn. foldtree {A} (\n. Tree {n} B) (\a b. leaf (fn a) (fn b)) node;
+
+let sometree : Tree Bit
+    = node (node (leaf O I) (leaf I O)) (node (leaf I O) (leaf O I));
 
 
 
@@ -85,11 +96,128 @@ let pred : Nat -> Nat =
     \n. snd {Nat} (n (\p. pair (suc (fst p)) (fst p)) (pair zero zero));
 
 let fold : {A} -> (Nat -> A -> A) -> A -> Nat -> A
-    = \{A} r base n. snd {Nat} (n {Pair Nat A}
-        (\p. pair (suc (fst p)) (r (fst p) (snd p)))
-        (pair zero base));
+    = \{A} reducer base n. snd {Nat} (n {Pair Nat A} (\p. pair (suc (fst p)) (p reducer)) (pair zero base));
 
 let fact : Nat -> Nat
     = \n. fold {Nat} (\k acc. mul acc (suc k)) (suc zero) n;
 
 fact (suc (suc (suc zero)))
+
+
+
+-- Dependently Typed Folds for Nested Data Types, Peng Fu and Peter Selinger
+let Bush : {n} -> U -> U
+    = \{n} A. (B : Nat -> U) -> (A -> B zero) -> ({n} -> B (suc n)) ->
+        ({n} -> B n -> B (suc (suc n)) -> B (suc n)) -> B n;
+let bbase : {A} -> A -> Bush {zero} A
+    = \a B b n c. b a;
+let bnil : {n A} -> Bush {suc n} A
+    = \B b n c. n;
+let bcons : {n A} -> Bush {n} A -> Bush {suc (suc n)} A -> Bush {suc n} A
+    = \x xs B b n c. c (x B b n c) (xs B b n c);
+
+let foldbush : {A} -> (B : Nat -> U) -> (A -> B zero) ->
+               ({n} -> B (suc n)) -> ({n} -> B n -> B (suc (suc n)) -> B (suc n)) ->
+               {n} -> Bush {n} A -> B n
+    = \B b n c bush. bush B b n c;
+
+let mapbush : {A B n} -> (A -> B) -> Bush {n} A -> Bush {n} B
+    = \{A}{B} fn. foldbush {A} (\n. Bush {n} B) (\x. bbase (fn x)) bnil bcons;
+
+-- [ O,
+--   [ I, [ I ] ],
+--   [ [ O ] ] ]
+let somebush : Bush Bit
+    = bcons (bbase O) (bcons
+            (bcons (bbase I) (bcons
+                   (bcons (bbase I) bnil)
+                   bnil)) (bcons
+            (bcons (bcons (bbase O) bnil)
+                   bnil)
+            bnil));
+            
+mapbush not somebush
+
+
+
+let Nonempty : U -> U
+    = \A. {N} -> (A -> N) -> (A -> N -> N) -> N;
+let sing : {A} -> A -> Nonempty A
+    = \a s c. s a;
+let cons : {A} -> A -> Nonempty A -> Nonempty A
+    = \a as s c. c a (as s c);
+
+let Monoid : U -> U
+    = \A. {M} -> (neut : M) -> (comb : A -> M -> M) -> M;
+let neut : {A} -> Monoid A
+    = \n c. n;
+let comb : {A} -> A -> Monoid A -> Monoid A
+    = \a as n c. c a (as n c);
+
+let Functor : (U -> U) -> U
+    = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
+let maybeFunctor : Functor Maybe
+    = \f. f (\fn ma n j. ma n (\a. j (fn a)));
+
+let Foldable : (U -> U) -> U
+    = \(F : U -> U). {T}{super : Functor F}{A W} ->
+                     ((foldmap : {MonW : Monoid W} -> (A -> W) -> F A -> W) -> F T) -> F T;
+-- let fold : {W}{F : U -> U}{FoldF : Foldable F}{MonW : Monoid W} -> F W -> W
+--     = foldmap (\x. x);
+
+let maybeFoldable : Foldable Maybe
+    = \{super=super}{A=A}{W=W} f. f (\{MonW=maybeMonoid} fn ma. ma {Maybe A} nothing (\x. just (fn x)));
+maybeFoldable {maybeFunctor} (\foldmap. foldmap not (just O))
+
+
+let Monoid : U -> U
+    = \M. ({A} -> (neut : M) -> (comb : A -> M -> M) -> M) -> M;
+let maybeMonoid : {A} -> Monoid (Maybe A)
+    = \{A=A} f. f {A} nothing (\a _. just a);
+
+-- maybeMonoid {Bit} (\n c. n)
+maybeMonoid {Bit} (\n c. c I _)
+
+
+
+let Nat : U    = (N : U) -> (N -> N) -> N -> N;
+let zero : Nat = \N s z. z;
+let suc : Nat -> Nat = \n N s z. s (n N s z);
+
+let DNat : Nat -> U = \n. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN zero -> DN n;
+let dz : DNat zero = \DN s z. z;
+let dsuc : {m : Nat} -> DNat m -> DNat (suc m) = \n DN s z. s (n DN s z);
+
+let foldDNat : (DN : Nat -> U) -> (s : {m} -> DN m -> DN (suc m)) ->
+               (z : DN zero) -> {n} -> DNat n -> DN n
+    = \DN s z dnat. dnat DN s z;
+
+let Tree : {n} -> U -> U
+    = \{n} A. (T : Nat -> U) -> (A -> A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
+let leaf : {A} -> A -> A -> Tree {zero} A
+    = \a b T l n. l a b;
+let node : {A n} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A
+    = \ta tb T l n. n (ta T l n) (tb T l n);
+
+let initWord : {n : Nat} -> DNat n -> Tree {n} Bit
+    = \dn. foldDNat (\n. Tree {n} Bit) (\acc. node {Bit} acc acc) (leaf {Bit} O O) dn;
+initWord (dsuc (dsuc dz))
+
+
+
+let bitAdd : Bit -> Bit -> Bit -> Pair Bit Bit
+    = \a b c. pair (carry a b c) (sum a b c);
+
+let addWithCarry : {n} -> Tree {n} Bit -> Tree {n} Bit -> Pair Bit (Tree {n} Bit)
+    = \ta tb. x;
+let word0 = leaf O I;
+let word1 = leaf I I;
+addWithCarry word0 word1
+
+
+
+let addr : Vec {suc zero} Bit
+    = cons O nil;
+let word0 : Tree {zero} Bit
+    = leaf O I;
+getBit addr word0

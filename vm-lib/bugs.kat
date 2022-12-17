@@ -15,3 +15,7 @@ fact (\f. f (\s z. z))
 let Nat : U    = {N} -> (N -> N) -> N -> N;
 let zero : Nat = \s z. z;
 (\u. zero)
+
+
+
+-- Comments after last term cause pos error
