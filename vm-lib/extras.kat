@@ -62,14 +62,12 @@ let Functor : (U -> U) -> U
 let treeFunctor : Functor Tree
     = \f. f (\fn ta T l n. ta T (\a b. l (fn a) (fn b)) n);
 
-let foldtree : {A} -> (T : Nat -> U) -> (A -> A -> T zero) ->
-               ({m} -> T m -> T m -> T (suc m)) -> {n} -> Tree {n} A -> T n
-    = \T l n tree. tree T l n;
 let maptree : {A B n} -> (A -> B) -> Tree {n} A -> Tree {n} B
-    = \{A}{B} fn. foldtree {A} (\n. Tree {n} B) (\a b. leaf (fn a) (fn b)) node;
+    = \{A}{B} fn tree. tree (\n. Tree {n} B) (\a b. leaf (fn a) (fn b)) node;
 
 let sometree : Tree Bit
     = node (node (leaf O I) (leaf I O)) (node (leaf I O) (leaf O I));
+maptree not sometree
 
 
 
@@ -188,10 +186,6 @@ let DNat : Nat -> U = \n. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN z
 let dz : DNat zero = \DN s z. z;
 let dsuc : {m : Nat} -> DNat m -> DNat (suc m) = \n DN s z. s (n DN s z);
 
-let foldDNat : (DN : Nat -> U) -> (s : {m} -> DN m -> DN (suc m)) ->
-               (z : DN zero) -> {n} -> DNat n -> DN n
-    = \DN s z dnat. dnat DN s z;
-
 let Tree : {n} -> U -> U
     = \{n} A. (T : Nat -> U) -> (A -> A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
 let leaf : {A} -> A -> A -> Tree {zero} A
@@ -199,8 +193,8 @@ let leaf : {A} -> A -> A -> Tree {zero} A
 let node : {A n} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A
     = \ta tb T l n. n (ta T l n) (tb T l n);
 
-let initWord : {n : Nat} -> DNat n -> Tree {n} Bit
-    = \dn. foldDNat (\n. Tree {n} Bit) (\acc. node {Bit} acc acc) (leaf {Bit} O O) dn;
+let initWord : {n} -> DNat n -> Tree {n} Bit
+    = \dn. dn (\n. Tree {n} Bit) (\acc. node acc acc) (leaf O O);
 initWord (dsuc (dsuc dz))
 
 
@@ -216,8 +210,69 @@ addWithCarry word0 word1
 
 
 
+let head : {A n} -> Vec {suc n} A -> A
+    = \{A} v. v (\_. A) _ (\x xs. x);
+let tail : {A n} -> Vec {suc n} A -> Vec {n} A
+    = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
+-- tail (cons I (cons O nil))
+
+let getBit : {n} -> Tree {n} Bit -> Vec {suc n} Bit -> Bit
+    = \{n} tree vec. fst ((tail vec) (\k. Pair Bit (Tree {sub n k} Bit))
+        (pair (head vec) tree) (\{k} bit acc. (snd acc) _
+            (\a b. pair (bit _ a b) (initWord dz))
+            (\ta tb. pair bit (bit _ ta tb))));
 let addr : Vec {suc zero} Bit
     = cons O nil;
 let word0 : Tree {zero} Bit
     = leaf O I;
-getBit addr word0
+getBit word0 addr
+
+
+(\n. addr (\k. (sub (suc n) k) _ (\_. Tree {sub n k} Bit) Bit)
+    word0 (\{k} bit acc. acc ((sub (suc n) k) _ (\_. Tree {sub n k} Bit) Bit) (\a b. bit Bit a b) (\ta tb. bit (Tree {sub n k} Bit) ta tb))) zero
+
+
+
+let LC : U = {R} -> (L : (R -> R) -> R) -> (A : R -> R -> R) -> R;
+let id : LC = \l a. l (\x. x);
+let comp : LC = \l a. l (\g. l (\f. l (\x. a g (a f x))));
+let delta : LC = \l a. l (\x. a x x);
+let omega : LC = \l a. a (l (\x. a x x)) (l (\x. a x x));
+let z : LC = \l a. l (\s. l (\z. a s z));
+let s : LC = \l a. l (\n. l (\s. l (\z. a s (a (a n s) z))));
+
+
+
+let Either : U -> U -> U = \A B. (E : U) -> (A -> E) -> (B -> E) -> E;
+let left : {A B} -> A -> Either A B = \a E l r. l a;
+let right : {A B} -> B -> Either A B = \b E l r. r b;
+-- let resolve : {A B}{C : Either A B -> U} -> ((a : A) -> C (left a)) -> ((b : B) -> C (right b)) ->
+--               (e : Either A B) -> C e
+--     = \{C=C} f g e. e (C e) f g;
+
+let Void : U = (V : U) -> V;
+let absurd : {A} -> Void -> A = \v. _;
+let neg : U -> U = \P. P -> Void;
+let Dec : U -> U = \P. Either P (neg P);
+let Decidable : {A B} -> (A -> B -> U) -> U
+    = \{A}{B} p. (x : A) -> (y : B) -> Dec (p x y);
+
+let head : {A n} -> Vec {suc n} A -> A
+    = \{A} v. v (\_. A) _ (\x xs. x);
+let tail : {A n} -> Vec {suc n} A -> Vec {n} A
+    = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
+-- tail (cons I (cons O nil))
+
+let lbranch : {A n} -> Tree {suc n} A -> Tree {n} A
+    = \{A}{n} t. t (\_. Tree {n} A) _ (\ta tb. ta);
+let rbranch : {A n} -> Tree {suc n} A -> Tree {n} A
+    = \{A}{n} t. t (\_. Tree {n} A) _ (\ta tb. tb);
+let divine : {A} -> Tree {zero} A -> A
+    = \{A} t. t (\_. A) (\a. a) _;
+-- divine (leaf O)
+-- lbranch (node (leaf O) (leaf I))
+
+let getBit : {n} -> Tree {n} Bit -> Vec {n} Bit -> Bit
+    = \{n} tree vec. divine (vec (\k. Tree {sub n k} Bit) tree
+        (\{k} bit acc. bit (Tree {sub n k} Bit) (lbranch {Bit}{sub n k} acc) (rbranch {Bit}{sub n k} acc)));
+getBit word0 addr
