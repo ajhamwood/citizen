@@ -276,3 +276,42 @@ let getBit : {n} -> Tree {n} Bit -> Vec {n} Bit -> Bit
     = \{n} tree vec. divine (vec (\k. Tree {sub n k} Bit) tree
         (\{k} bit acc. bit (Tree {sub n k} Bit) (lbranch {Bit}{sub n k} acc) (rbranch {Bit}{sub n k} acc)));
 getBit word0 addr
+
+
+
+-- Bit addressing
+
+let getBit : {n} -> Tree {n} Bit -> Vec {n} Bit -> Tree {zero} Bit
+    = \{n} tree vec. snd (vec (\k. Pair Nat (Tree {sub n k} Bit)) (pair n tree)
+        (\{k} bit acc. pair (pred (fst acc))
+            (bit (Tree {sub n k} Bit)
+                ((snd acc) (\_. Tree {sub n k} Bit) _ (\ta tb. ta))
+                ((snd acc) (\_. Tree {sub n k} Bit) _ (\ta tb. tb)))));
+-- bit (Pair Nat (Tree {fst acc} Bit)) (lbranch {Bit}{fst acc} (snd acc)) (rbranch {Bit}{fst acc} (snd acc))
+
+let addr : Vec {suc zero} Bit
+    = cons O nil;
+let word0 : Tree {suc zero} Bit
+    = node (leaf O) (leaf O);
+getBit word0 addr
+
+
+
+let Cont : U -> U -> U
+    = \W A. (C : U) -> (((A -> W) -> W) -> C) -> C;
+let cont : {W A} -> ((A -> W) -> W) -> Cont W A
+    = \f C c. c f;
+let run : {W A} -> Cont W A -> (A -> W) -> W
+    = \c f. c _ (\k. k f);
+let reset : {W} -> Cont W W -> W
+    = \m. run m (\x. x);
+let shift : {W A} -> ((A -> W) -> Cont W W) -> Cont W A
+    = \e. cont (\k. reset (e k));
+
+let add : Nat -> Nat -> Nat
+    = \a b N s z. a N s (b N s z);
+let addcps : {R} -> Nat -> Nat -> Cont Nat Nat
+    = \a b. cont (\k. k (add a b));
+let test : {R} -> Nat -> Nat -> Cont Nat Nat
+    = \a b. cont (\k. run (addcps a b) (\v. run (addcps a v) k));
+run (test (suc (suc zero)) (suc zero)) (\x. x)
