@@ -1,0 +1,21 @@
+-- Causes unifyPlaceholder error (tries to vApp with mvar:8, a VPi)
+let Fix : {F} -> U -> U
+    = \{F} A. ((A -> A) -> F) -> F;
+let fix : {A} -> (A -> A) -> Fix A
+    = \f x. f (x f);
+
+let fact : _
+    = fix (\fn n. _);
+
+fact (\f. f (\s z. z))
+
+
+
+-- Causes eval error (tries to eval an AppPruning with no env)
+let Nat : U    = {N} -> (N -> N) -> N -> N;
+let zero : Nat = \s z. z;
+(\u. zero)
+
+
+
+-- Comments after last term cause pos error

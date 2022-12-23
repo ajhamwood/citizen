@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+  <title>VM testing</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/x-icon" href="icons/favicon.ico">
+  <style>body { background: black }</style>
+</head>
+<body data-section="nodeView">
+  <script src="js/testvm.js"></script>
+  <script>
+function getTime () { let d = performance.now() - appStart;
+  return isNaN(d) ? "0000000" : String(d < 0 ? 1e7 + d : d).padStart(7, '0') }
+var appStart;
+const logLevels = { error: true, warn: true, log: true, info: false, debug: false },
+      logColours = { debug: "lightseagreen", info: "lightseagreen", log: "tomato", warn: "tomato", error: "tomato" },
+      tell = new Proxy({}, { get ({}, prop) {
+        if (logLevels[prop]) return function (event, ...args) {
+          let lastArg = args.pop(), message = [ `${getTime()} %c${this.addr} %c${event}`,
+                "color: greenyellow; font-weight: 900", `color: ${logColours[prop]}; font-weight: 900`, ...args ];
+          if (prop === "error") {
+            console.error(...message);
+            throw Object.assign(new Error(""), { stack: lastArg })
+          } else console[prop](...message, lastArg);
+        };
+        else return () => {}
+      } });
+
+var testKat = async () => {
+  appStart = performance.now();
+  let data, err;
+  try {
+    const { returnAll } = await VM({ debug: { showPhase: false } })
+      .import({ path: "vm-lib/scratch.kat", memory: null });
+    data = await returnAll.run();
+  } catch (e) { /*console.log(e);*/ err = { message: e.message, stack: e.stack } }
+  if (err) tell.error.call({ addr: "test" }, "Kat error", "\n" + err.message, err.stack);
+  else {
+    const s = data.toString();
+    tell.log.call({ addr: "test" }, "Kat result", "\nTerm:", s.term, "\nType:", s.type,
+      "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.map(ms => "\n" + ms))
+  }
+}
+window.onload = testKat
+  </script>
+  <noscript><h6>Only viewable with JavaScript enabled.</h6></noscript>
+</body>
+</html>

@@ -42,7 +42,7 @@ class Transaction {
     else {
       const s = result.data.toString();
       tell.log.call(peer, "PROGRAM RESULT", "\nTerm:", s.term, "\nType:", s.type,
-        "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.flatMap(ms => ["\n", ms]));
+        "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.map(ms => "\n" + ms));
       if (usedCompUnitsTotal + usedCompUnits < Infinity) {
         result.commit(state);
         this.data.result = s;
@@ -59,7 +59,7 @@ class Transaction {
     else {
       const s = result.data.toString();
       tell.log.call(peer, "PROGRAM RESULT", "\nTerm:", s.term, "\nType:", s.type,
-        "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.flatMap(ms => ["\n", ms]));
+        "\n\nElaborated term:", "\n" + s.elab, "\n\nMetacontext:", ...s.metas.map(ms => "\n" + ms));
       if (usedCompUnits < Infinity) result.commit(state);
     }
   }

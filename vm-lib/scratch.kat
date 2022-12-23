@@ -1,0 +1,40 @@
+-- Booleans
+
+let Bit : U                                         = (B : U) -> B -> B -> B;
+let I : Bit                                         = \B i o. i;
+let O : Bit                                         = \B i o. o;
+let not : Bit -> Bit                                = \b B i o. b B o i;
+
+-- Lists
+
+let List : U -> U                                   = \A. (L : U) -> L -> (A -> L -> L) -> L;
+let nil  : {A} -> List A                            = \L n c. n;
+let cons : {A} -> A -> List A -> List A             = \a as L n c. c a (as L n c);
+let concat : {A} -> List A -> List A -> List A      = \{A} la lb. la (List A) lb cons;
+
+-- Functors
+
+let Functor : (U -> U) -> U
+    = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
+let listFunctor : Functor List                      = \F. F (\fn la L n c. la L n (\a as. c (fn a) as));
+-- listFunctor (\map. map not (cons O (cons I nil)))
+
+
+-- Applicatives
+
+let App : (U -> U) -> U
+    = \(F : U -> U). {T} -> ((pure : {A} -> A -> F A) ->
+                     (ap : {A B} -> F (A -> B) -> F A -> F B) -> F T) -> F T;
+let appFunctor : {F} -> App F -> Functor F          = \app F. F (\{A}{B} fn fa. app (\pure ap. ap {A}{B} (pure fn) fa));
+let listApp : App List                              = \A. A (\x. cons x nil) (\fs xs. fs _ nil (\f bs. concat (listFunctor (\map. map f xs)) bs));
+-- listApp {Bit} (\pure ap. ap (cons not (cons (\x. x) nil)) (cons O (cons I nil)))
+
+
+let appComp : {F G : U -> U} -> App F -> App G -> App (\X. G (F X))
+    = \{F}{G} appF appG A. A
+        (\{X} x. appG {F X} (\pureG apG. pureG (appF {X} (\pureF apF. pureF x))))
+        (\{X}{Y} f x. appF (\pureF apF. apF (appG (\pureG apG. apF (pureF {G X -> G Y} (apG {X}{Y})) f)) x));
+--        (\f x. (appFunctor appF) (\map. appG (\{X}{Y} pureG apG. map {X}{Y} apG (appF {G (X -> Y) -> G X -> G Y} (\pureF apF. apF {X}{Y})) f) s));
+(appComp listApp listApp) (\pure ap. ap
+    (cons (cons not nil) nil)
+    (cons (cons O (cons I nil)) (cons (cons I nil) nil)))

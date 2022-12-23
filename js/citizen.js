@@ -40,7 +40,9 @@ $.targets({
     new ResizeObserver(() => viz.emit('resize')).observe($("svg"));
 
     let { instance } = await testWasm(testModules.fib);
-    tell.log.call(citizen, "Wasm fib test", instance.exports.factorial(8n));
+    tell.log.call(citizen, "Wasm fib test", instance.exports.factorial(8));
+
+    // await testKat()
   },
   keyup (e) { if ($("#simSelect").validity.valid) {
     switch (e.keyCode) {
@@ -98,7 +100,7 @@ $.targets({
     },
 
     async editorRun (memory) {
-      let term, type, ctx, err, log = $("#log")
+      let term, type, ctx, err, log = $("#log");
       try {
         const { normalForm } = await VM().import({ code: $("#source").value, memory });
         ({ term, type, ctx } = await normalForm.run());
@@ -513,7 +515,8 @@ $.queries({
   "#nodeViewMenu > .sectionToggle": { click () { $("body").dataset.section = "katRepl" } },
   "menu > .button": { click () { chord.emit("createNode") } },
   "#katReplMenu > .sectionToggle": { click () { $("body").dataset.section = "nodeView" } },
-  "#run": { click () { citizen.emit("editorRun", new WebAssembly.Memory({ initial: 1, maximum: 1 })) } }
+  "#run": { click () { citizen.emit("editorRun", new WebAssembly.Memory({ initial: 1, maximum: 1 })) } },
+  "#clear": { click () { $("#log").innerHTML = "" } }
 });
 
 function initPeerWC () {
