@@ -79,7 +79,7 @@ let right : {A B} -> B -> Either A B                = \b E l r. r b;
 let List : U -> U                                   = \A. (L : U) -> L -> (A -> L -> L) -> L;
 let nil  : {A} -> List A                            = \L n c. n;
 let cons : {A} -> A -> List A -> List A             = \a as L n c. c a (as L n c);
-let concat : {A} -> List A -> List A -> List A      = \{A} la lb. la (List A) lb (\a as. cons {A} a as);
+let concat : {A} -> List A -> List A -> List A      = \{A} la lb. la (List A) lb cons;
 
 
 -- Non-empty list
@@ -133,6 +133,7 @@ let treeFunctor : Functor Tree                      = \F. F (\fn ta T l n. ta T 
 
 
 -- Bush
+-- Reference: Dependently Typed Folds for Nested Data Types, Peng Fu and Peter Selinger
 
 let Bush : {n} -> U -> U
     = \{n} A. (B : Nat -> U) -> (A -> B zero) -> ({n} -> B (suc n)) ->
@@ -174,7 +175,8 @@ let maybeMonoid : {A} -> Monoid (Maybe A)           = \{Z} M. M nothing (\{Y} a 
 
 -- Functors
 
-let Functor : (U -> U) -> U                         = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
+let Functor : (U -> U) -> U
+    = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
 let listFunctor : Functor List                      = \F. F (\fn la L n c. la L n (\a as. c (fn a) as));
 -- listFunctor (\map. map not (cons O (cons I nil)))
 
@@ -188,13 +190,21 @@ let appFunctor : {F} -> App F -> Functor F          = \app F. F (\{A}{B} fn fa. 
 let listApp : App List                              = \A. A (\x. cons x nil) (\fs xs. fs _ nil (\f bs. concat (listFunctor (\map. map f xs)) bs));
 -- listApp (\pure ap. ap (cons not (cons (\x. x) nil)) (cons O (cons I nil)))
 
+let appComp : {F G : U -> U} -> App F -> App G -> App (\X. G (F X))
+    = \{F}{G} appF appG A. A
+        (\{X} x. appG {F X} (\pureG apG. pureG (appF {X} (\pureF apF. pureF x))))
+        (\{X}{Y} f x. (appFunctor appF) (\map. appG (\pureG apG. map apG (appF (\pureF apF. apF {X}{Y} f) s))));
+-- (appComp listApp listApp) (\pure ap. ap
+--     (cons (cons not nil) nil)
+--     (cons (cons O (cons I nil)) (cons (cons I nil) nil)))
+
 
 -- Monads
 
 let Monad : (U -> U) -> U
-    = \(M : U -> U). {T} -> ((return : {A} -> A -> M A) ->
-                     (bind : {A B} -> M A -> (A -> M B) -> M B) -> M T) -> M T;
-let contMonad : {W} -> Monad (Cont W)               = \M. M (\x. cont (\k. k x)) (\m f. cont (\k. run m (\v. run (f v) k)));
+    = \(F : U -> U). {T} -> ((return : {A} -> A -> F A) ->
+                     (bind : {A B} -> F A -> (A -> F B) -> F B) -> F T) -> F T;
+let contMonad : {W} -> Monad (Cont W)               = \F. F (\x. cont (\k. k x)) (\m f. cont (\k. run m (\v. run (f v) k)));
 
 let mapM : {A B}{M : U -> U}{monad : Monad M} -> (A -> M B) -> List A -> M (List B)
     = (\{A}{B}{M}{monad} f as. monad
@@ -206,4 +216,4 @@ let mapM : {A B}{M : U -> U}{monad : Monad M} -> (A -> M B) -> List A -> M (List
 -- Traversable
 
 let Trav : (U -> U) -> U
-    = \(F : U -> U). {T} -> ((traverse : {G : U -> U}{S T}{app : App G} -> (S -> G T) -> F S -> G (F T)) -> F T) -> F T;
+    = \(F : U -> U). {T} -> ((traverse : {G : U -> U}{A B}{app : App G} -> (A -> G B) -> F A -> G (F B)) -> F T) -> F T;

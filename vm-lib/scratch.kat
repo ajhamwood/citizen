@@ -4,82 +4,18 @@ let Bit : U                                         = (B : U) -> B -> B -> B;
 let I : Bit                                         = \B i o. i;
 let O : Bit                                         = \B i o. o;
 let not : Bit -> Bit                                = \b B i o. b B o i;
-let and : Bit -> Bit -> Bit                         = \x y B i o. x B (y B i o) (x B i o);
-let or : Bit -> Bit -> Bit                          = \x y B i o. x B (x B i o) (y B i o);
-let xor : Bit -> Bit -> Bit                         = \x y B i o. x B (y B o i) (y B i o);
-let if : {R} -> Bit -> R -> R -> R                  = \p a b. p _ a b;
-let carry : Bit -> Bit -> Bit -> Bit                = \a b c. or (and a b) (and c (xor a b));
-let sum : Bit -> Bit -> Bit -> Bit                  = \a b c. xor (xor a b) c;
-
-
--- Products
-
-let Pair : U -> U -> U                              = \A B. (P : U) -> (A -> B -> P) -> P;
-let pair : {A B} -> A -> B -> Pair A B              = \a b P p. p a b;
-let fst : {A B} -> Pair A B -> A                    = \s. s _ (\a b. a);
-let snd : {A B} -> Pair A B -> B                    = \s. s _ (\a b. b);
-
-
--- Nats
-
-let Nat : U                                         = (N : U) -> (N -> N) -> N -> N;
-let zero : Nat                                      = \N s z. z;
-let suc : Nat -> Nat                                = \n N s z. s (n N s z);
-let pred : Nat -> Nat                               = \n. snd {Nat} (n _ (\p. pair (suc (fst p)) (fst p)) (pair zero zero));
-let sub : Nat -> Nat -> Nat                         = \m n. n _ pred m;
-let eqz : Nat -> Bit                                = \n. n _ (\z B i o. o) (\B i o. i);
-
-
--- Height-indexed Binary Trees
-
-let Tree : {n} -> U -> U                            = \{n} A. (T : Nat -> U) -> (A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
-let leaf : {A} -> A -> Tree {zero} A                = \a T l n. l a;
-let node : {A n} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A = \ta tb T l n. n (ta T l n) (tb T l n);
-let divine : {A} -> Tree {zero} A -> A              = \{A} t. t (\_. A) (\a. a) _;
-let lbranch : {A n} -> Tree {suc n} A -> Tree {n} A = \{A}{n} t. t (\_. Tree {n} A) _ (\ta tb. ta);
-let rbranch : {A n} -> Tree {suc n} A -> Tree {n} A = \{A}{n} t. t (\_. Tree {n} A) _ (\ta tb. tb);
--- divine (leaf O)
--- lbranch (node (leaf O) (leaf I))
-
-
--- Dependent Nats
-
-let DNat : Nat -> U                                 = \n. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN zero -> DN n;
-let dz : DNat zero                                  = \DN s z. z;
-let dsuc : {m : Nat} -> DNat m -> DNat (suc m)      = \n DN s z. s (n DN s z);
-let initWord : {n} -> DNat n -> Tree {n} Bit        = \dn. dn (\n. Tree {n} Bit) (\acc. node acc acc) (leaf O);
--- initWord (dsuc (dsuc dz))
-
-
--- Length-indexed Vectors
-
-let Vec : {n} -> U -> U                             = \{n} A. (V : Nat -> U) -> V zero -> ({m : Nat} -> A -> V m -> V (suc m)) -> V n;
-let nil : {A} -> Vec {zero} A                       = \V n c. n;
-let cons : {A n} -> A -> Vec {n} A -> Vec {suc n} A = \a as V n c. c a (as V n c);
-let head : {A n} -> Vec {suc n} A -> A              = \{A} v. v (\_. A) _ (\x xs. x);
-let tail : {A n} -> Vec {suc n} A -> Vec {n} A      = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
--- tail (cons I (cons O nil))
-
-
--- Continuations
-
-let Cont : U -> U -> U                              = \W A. (C : U) -> (((A -> W) -> W) -> C) -> C;
-let cont : {W A} -> ((A -> W) -> W) -> Cont W A     = \f C c. c f;
-let run : {W A} -> Cont W A -> (A -> W) -> W        = \c f. c _ (\k. k f);
-let reset : {W} -> Cont W W -> W                    = \m. run m (\x. x);
-let shift : {W A} -> ((A -> W) -> Cont W W) -> Cont W A = \e. cont (\k. reset (e k));
-
 
 -- Lists
 
 let List : U -> U                                   = \A. (L : U) -> L -> (A -> L -> L) -> L;
 let nil  : {A} -> List A                            = \L n c. n;
 let cons : {A} -> A -> List A -> List A             = \a as L n c. c a (as L n c);
-let concat : {A} -> List A -> List A -> List A      = \{A} la lb. la (List A) lb (\a as. cons {A} a as);
+let concat : {A} -> List A -> List A -> List A      = \{A} la lb. la (List A) lb cons;
 
 -- Functors
 
-let Functor : (U -> U) -> U                         = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
+let Functor : (U -> U) -> U
+    = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
 let listFunctor : Functor List                      = \F. F (\fn la L n c. la L n (\a as. c (fn a) as));
 -- listFunctor (\map. map not (cons O (cons I nil)))
 
@@ -91,13 +27,14 @@ let App : (U -> U) -> U
                      (ap : {A B} -> F (A -> B) -> F A -> F B) -> F T) -> F T;
 let appFunctor : {F} -> App F -> Functor F          = \app F. F (\{A}{B} fn fa. app (\pure ap. ap {A}{B} (pure fn) fa));
 let listApp : App List                              = \A. A (\x. cons x nil) (\fs xs. fs _ nil (\f bs. concat (listFunctor (\map. map f xs)) bs));
--- listApp (\pure ap. ap (cons not (cons (\x. x) nil)) (cons O (cons I nil)))
+-- listApp {Bit} (\pure ap. ap (cons not (cons (\x. x) nil)) (cons O (cons I nil)))
 
 
 let appComp : {F G : U -> U} -> App F -> App G -> App (\X. G (F X))
     = \{F}{G} appF appG A. A
-        (\x. appG (\pureG apG. pureG (appF (\pureF apF. pureF x))))
-        (\f x. (appFunctor appF) (\map. (appG (\pureG apG. map apG)) (appF (\pureF apF. apF))));
+        (\{X} x. appG {F X} (\pureG apG. pureG (appF {X} (\pureF apF. pureF x))))
+        (\{X}{Y} f x. appF (\pureF apF. apF (appG (\pureG apG. apF (pureF {G X -> G Y} (apG {X}{Y})) f)) x));
+--        (\f x. (appFunctor appF) (\map. appG (\{X}{Y} pureG apG. map {X}{Y} apG (appF {G (X -> Y) -> G X -> G Y} (\pureF apF. apF {X}{Y})) f) s));
 (appComp listApp listApp) (\pure ap. ap
     (cons (cons not nil) nil)
     (cons (cons O (cons I nil)) (cons (cons I nil) nil)))

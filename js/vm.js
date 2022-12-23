@@ -9,7 +9,7 @@ function VM (options = {}) {
           ...Object.entries(o ?? {}).flatMap(([k, v], i, ar) => [ `${k}:`,
             ...(typeof v === "string" ? [`\`${v}\``] : AST.isPrototypeOf(v?.constructor) ? [`${v.toString(ctx)}`, v] : [v]), ...(i === ar.length - 1 ? [] : [","]) ]), "}" ])
     return debugOpts !== true && debugOpts?.showPhase !== phase ? () => () => {} :
-      prop === "log" || prop === "group" ? (ctx, thrown = false) => (v, ...rest) => { console[prop](...(typeof v === "string" ? colour(v) : serialise(declutter(v), ctx, thrown)),
+      prop === "log" || prop === "group" ? (ctx = {}, thrown = false) => (v, ...rest) => { console[prop](...(typeof v === "string" ? colour(v) : serialise(declutter(v), ctx, thrown)),
         ...serialise(rest.flatMap(declutter), ctx),
         (stack => { try { throw new Error('') } catch (e) { stack = e.stack || "" }
           return stack.split(`\n`)[3].replace(/@.*(js)/g, "") })()) } : console[prop]
@@ -21,14 +21,16 @@ function VM (options = {}) {
       debug.groupEnd();
       return res
     } })[name] : fn.bind(self)
-  } }))(debug);
+  } }))(debug),
+  clone = o => Object.fromEntries(Object.entries(o).map(([k, v]) => ([k, v instanceof Array ? v.slice() :
+    v instanceof Map ? new v.constructor(v) : v])));
 
   class Result {  // Error handling
     constructor (fn) {
       let thrown = false, value = null;
       const error = v => (thrown = true, v),
             join = (fn, v = value) => (r => { Result.prototype.isPrototypeOf(r) &&
-              (x => value = "ok" in x ? x.ok : error(x.err))(r.unwrap()); const { source, ...gctx } = globalContext; debug.log(value?.ctx, thrown)(value, { globalContext: gctx }); })
+              (x => value = "ok" in x ? x.ok : error(x.err))(r.unwrap()); const { source, ...gctx } = globalContext; debug.log(value?.ctx, thrown)(value, { globalContext: clone(gctx) }); })
               (value = fn(v, error));
       this.then = fn => (thrown || join(fn), this);  // On resolve
       this.catch = fn => (thrown && (thrown = false, join(fn)), this);  // On reject
@@ -72,7 +74,8 @@ function VM (options = {}) {
       RHole () { return `{?}` },
 
       Var (ctx, names = AST.names(ctx)) { const lvl = names.length - this.ix - 1;
-        if (lvl >= 0) { const str = names[lvl]; return str === "_" ? "@" + this.ix : str }
+        if (lvl >= names.length) return "@" + this.ix;
+        else if (lvl >= 0) { const str = names[lvl]; return str === "_" ? "@" + this.ix : str }
         else return `#${-1 - lvl}` },
       App (ctx, names = AST.names(ctx), prec = 0) {
         const str = `${this.func.toString(ctx, names, 2)} ${this.isImpl ? `{${this.arg.toString(ctx, names, 0)}}` : this.arg.toString(ctx, names, 3)}`;
@@ -114,7 +117,7 @@ function VM (options = {}) {
       AppPruning (ctx, names = AST.names(ctx), prec) {
         const str = this.prun.reduce((str, mbIsImpl, i) => {
           if (mbIsImpl === null) return str;
-          const name = names[i], prun = (name === "_" ? "@." + i : name);
+          const name = names[i], prun = (name === "_" ? "@" + i : name);
           return str + " " + (mbIsImpl ? `{${prun}}` : prun)
         }, this.term.toString(ctx, names, prec));
         return prec > 2 ? `(${str})` : str },
@@ -189,7 +192,7 @@ function VM (options = {}) {
           return Parser.do([ Parser.char(opener),
             ({}, s) => Parser.seq([ Parser.option(this.ws), p ])(s),
             (x, y, s) => Parser.seq([ this.cut(Parser.char(closer), `Unclosed ${glyphs}`, { start: x.pos, end: y.pos }),
-              s1 => Parser.option(this.ws)(s1).then(s2 => (({ ...s2, data: s.data }))) ])(s) ]) },
+              s1 => Parser.option(this.ws)(s1).then(s2 => ({ ...s2, data: s.data })) ])(s) ]) },
         symbol (str, isTest = true) { return state => Parser.map(Parser.guard(
           Parser.many((isTest ? this : Parser).satisfy(s => s.data === str[s.offset - state.offset - 1], `Symbol: "${str}"`)),
           data => data.length === str.length), data => data.join(""))(state) },
@@ -213,16 +216,16 @@ function VM (options = {}) {
           Parser.map(this.keyword("_"), () => new RHole({ pos: globalContext.pos })),
           this.region(this.term, "parens") ])(state) },
         arg (state) { return Parser.choice([
-          this.region(Parser.do([ this.ident,
+          Parser.seq([ this.region(Parser.do([ this.ident,
             ({}, s) => Parser.seq([ this.keyword("="), this.cut(this.term, "Malformed named implicit argument") ])(s),
-            ({}, s, t) => ({ ...t, data: [ t.data, s.data ] }) ]), "braces"),
-          Parser.map(this.region(this.term, "braces"), data => [ data, true ]),
-          Parser.map(this.atom, data => [ data, false ]) ])(state) },
+            ({}, s, t) => ({ ...t, data: [ t.data, s.data ] }) ]), "braces"), s => ({ ...s, data: s.data.concat([ s.pos ]) }) ]),
+          Parser.seq([ this.region(this.term, "braces"), s => ({ ...s, data: [ s.data, true, s.pos ] }) ]),
+          Parser.seq([ this.atom, s => ({ ...s, data: [ s.data, false, s.pos ] }) ]) ])(state) },
 
         binder (state) { return Parser.map(this.catchSymbol(Parser.alt(this.ident, this.keyword("_"))), data => [ data, globalContext.pos ])(state) },
         spine (state) { return Parser.do([ this.atom, ({}, s) => Parser.alt(Parser.many(this.arg), s => ({ ...s, data: [] }))(s),
           ({}, s, t) => (this.setPos({ start: state.pos }),
-            { ...t, data: t.data.reduce((func, [arg, nameIcit]) => new RApp({ func, arg, nameIcit, pos: this.setPos({ end: arg.pos[1] }) }), s.data) }) ])(state) },
+            { ...t, data: t.data.reduce((func, [arg, nameIcit, pos]) => new RApp({ func, arg, nameIcit, pos: this.setPos({ end: pos }) }), s.data) }) ])(state) },
 
         lamBinder (state) { return Parser.choice([
           this.region(Parser.do([ this.binder, ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed explicit lambda") ]))(s),
@@ -374,7 +377,7 @@ function VM (options = {}) {
         
         quote: Evaluator.match({
           vflex ({ ctx, lvl, val }) { return this.quoteSp({ ctx, lvl, term: new Meta({ mvar: val.mvar }), spine: val.spine }) },
-          vrigid ({ ctx, lvl, val }) { return this.quoteSp({ ctx, lvl, term: new Var({ ix: lvl - val.lvl - 1 }), spine: val.spine }) },
+          vrigid ({ ctx, lvl, val }) { /*console.log("here", lvl, val.lvl);*/ return this.quoteSp({ ctx, lvl, term: new Var({ ix: lvl - val.lvl - 1 }), spine: val.spine }) },
           vlam ({ ctx, lvl, val }) { return new Lam({ name: val.name,
             body: this.quote({ ctx, lvl: lvl + 1, val: this.cApp({ ctx, cls: val.cls, val: new VRigid({ lvl, spine: [] }) }) }), isImpl: val.isImpl }) },
           vpi ({ ctx, lvl, val }) { return new Pi({ name: val.name, dom: this.quote({ ctx, lvl, val: val.dom }),
@@ -480,7 +483,7 @@ function VM (options = {}) {
           (Symbol("OKRenaming"), Symbol("OKNonRenaming"), Symbol("NeedsPruning")),
 
         renameSp ({ ctx, pren, term, spine }) { return spine.reduce((acc, [val, isImpl]) =>
-          acc.then(func => this.rename({ ctx, val, pren }).then(({ rhs: arg }) => new App({ func, arg, isImpl }))), Result.pure(term)).then(rhs => ({ ctx, rhs })) },
+          acc.then(({ rhs: func }) => this.rename({ ctx, val, pren }).then(({ rhs: arg }) => ({ ctx, rhs: new App({ func, arg, isImpl }) }))), Result.pure({ ctx, rhs: term })) },
         rename: Evaluator.match({
           vflex ({ ctx, pren, fval }) { return pren.occ === fval.mvar ? Result.throw({ msg: "Unification error: Occurs check" }) :
             this.pruneVFlex({ ctx, pren, mvar: fval.mvar, spine: fval.spine }) },
@@ -546,8 +549,7 @@ function VM (options = {}) {
             val0: this.vApp({ ctx, vfunc: fval0, varg: new VRigid({ lvl, spine: [] }), icit: fval1.isImpl }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ lvl, spine: [] }) }) }) :
             fval1.constructor.name === "VFlex" ? this.solve({ ctx, lvl, mvar: fval1.mvar, spine: fval1.spine, val: fval0 }) :
               Result.throw({ msg: "Unification error: Rigid mismatch" }) }
-        }, { decorate ({ ctx, lvl, val0, val1 }) { debug.log(ctx)("unify", this.quote({ ctx, lvl, val: val0 }), this.quote({ ctx, lvl, val: val1 })) },
-             scrut: [ { fval0 ({ ctx, val0 }) { return this.force({ ctx, val: val0 }) } }, { fval1 ({ ctx, val1 }) { return this.force({ ctx, val: val1 }) } } ] }),
+        }, { scrut: [ { fval0 ({ ctx, val0 }) { return this.force({ ctx, val: val0 }) } }, { fval1 ({ ctx, val1 }) { return this.force({ ctx, val: val1 }) } } ] }),
         unifySp ({ ctx, lvl, spine0, spine1 }) { if (spine0.length !== spine1.length) return Result.throw({ msg: "Unification error: Rigid mismatch" })
           else return spine0.reduce((acc, [val0], i) => acc.then(() => this.unify({ ctx, lvl, val0, val1: spine1[i][0] })), Result.pure()) },
 
@@ -597,9 +599,9 @@ function VM (options = {}) {
               .then(({ term: body }) => ({ ctx, term: new Lam({ name: rterm.name, body, isImpl: fvtype.isImpl }) })) } } ],
           "rvar vpi": [ {
             guard ({ ctx, rterm, fvtype }) { const mbVtype = ctx.names.get(rterm.name)?.[1];
-              return fvtype.isImpl && typeof mbVtype !== "undefined" && this.force({ ctx, val: mbVtype }).constructor.name === "VFlex" },
+              return fvtype.isImpl && typeof mbVtype !== "undefined" && this.force({ ctx, val: mbVtype }).constructor.name === "VFlex" },  // repeated work
             clause ({ ctx, rterm, fvtype }) { const [ lvl, val ] = ctx.names.get(rterm.name);
-              return this.unify({ ctx, lvl: ctx.lvl, val0: this.force({ ctx, val }), val1: fvtype }).then(() => new VRigid({ lvl: ctx.lvl - lvl - 1, spine: [] })) } } ],
+              return this.unify({ ctx, lvl: ctx.lvl, val0: this.force({ ctx, val }), val1: fvtype }).then(() => ({ ctx, term: new Var({ ix: ctx.lvl - lvl - 1, spine: [] }) })) } } ],
           "rlet _": [ { guard: ({ fvtype }) => !["VPi", "VFlex"].includes(fvtype.constructor.name),
             clause ({ ctx, rterm, fvtype }) { return this.check({ ctx, rterm: rterm.type, vtype: new VU() }).then(({ term: type }) => {
               let cvtype = this.eval({ ctx, term: type, env: ctx.env });
@@ -640,8 +642,8 @@ function VM (options = {}) {
             if (fvtype.constructor.name === "VPi") return isImpl === fvtype.isImpl ? Result.pure([ fvtype.dom, fvtype.cls ]) :
               Result.throw({ msg: "Elaboration error: Implicit/explicit mismatch" });
             else { let dom = this.eval({ ctx, env: ctx.env, term: this.freshMeta({ ctx, vtype: new VU() }).meta });
-              return Result.pure(this.freshMeta({ ctx: this.bind({ ctx, name: "x", vtype: dom }), vtype: new VU() })).then(({ meta }) => ({ term: meta, env: ctx.env }))
-                .then(cls => this.unifyCatch({ ctx, val0: new VPi({ name: "x", dom, cls, isImpl }), val1: vtype, unifyErr: this.ExpectedInferred }).then(() => [ dom, cls ])) } })(this.force({ ctx, val: vtype }))
+              return Result.pure(this.freshMeta({ ctx: this.bind({ ctx, name: "x", vtype: dom }), vtype: new VU() })).then(({ meta }) => ({ ctx, cls: { term: meta, env: ctx.env }}))
+                .then(({ cls }) => this.unifyCatch({ ctx, val0: new VPi({ name: "x", dom, cls, isImpl }), val1: vtype, unifyErr: this.ExpectedInferred }).then(() => [ dom, cls ])) } })(this.force({ ctx, val: vtype }))
             .then(([ dom, cls ]) => this.check({ ctx, rterm: rterm.arg, vtype: dom })
               .then(({ term: arg }) => ({ ctx, term: new App({ func: term, arg, isImpl }), vtype: this.cApp({ ctx, cls, val: this.eval({ ctx, env: ctx.env, term: arg }) }) })))) },
           ru ({ ctx }) { return Result.pure({ ctx, term: new U(), vtype: new VU() }) },
@@ -654,7 +656,7 @@ function VM (options = {}) {
               .then(({ term }) => this.infer({ ctx: this.define({ ctx, name: rterm.name, term, val: this.eval({ ctx, term, env: ctx.env }), type, vtype: cvtype }), rterm: rterm.next })
                 .then(({ term: next, vtype }) => ({ ctx, term: new Let({ name: rterm.name, type, term, next }), vtype }))) }) },
           rhole ({ ctx }) { const vtype = this.eval({ ctx, env: ctx.env, term: this.freshMeta({ ctx, vtype: new VU() }).meta });
-          return Result.pure({ ctx, vtype, term: this.freshMeta({ ctx, vtype }) }) }
+          return Result.pure({ ctx, vtype, term: this.freshMeta({ ctx, vtype }).meta }) }
         }, { decorate: ({ rterm }) => globalContext.pos = rterm.pos, scrut: [ "rterm" ] }),
 
         doElab ({ rterm }) {

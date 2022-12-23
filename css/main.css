@@ -135,7 +135,7 @@ section {
   #katRepl > *::selection { background: #455d7a }
   #log {
     overflow-y: auto;
-    word-break: break-all;
+    word-break: break-word;
     white-space: pre-wrap }
   hr {
     border: 0;

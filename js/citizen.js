@@ -515,7 +515,8 @@ $.queries({
   "#nodeViewMenu > .sectionToggle": { click () { $("body").dataset.section = "katRepl" } },
   "menu > .button": { click () { chord.emit("createNode") } },
   "#katReplMenu > .sectionToggle": { click () { $("body").dataset.section = "nodeView" } },
-  "#run": { click () { citizen.emit("editorRun", new WebAssembly.Memory({ initial: 1, maximum: 1 })) } }
+  "#run": { click () { citizen.emit("editorRun", new WebAssembly.Memory({ initial: 1, maximum: 1 })) } },
+  "#clear": { click () { $("#log").innerHTML = "" } }
 });
 
 function initPeerWC () {
