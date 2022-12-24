@@ -121,18 +121,42 @@ section {
     display: flex;
     flex-flow: column nowrap;
     overflow: scroll }
-  #source, #log {
+  #source, #highlight, #log {
     background: #233142;
     font-family: univers;
     font-variant-ligatures: none;
     flex: 1 0;
     padding: .5em }
   #source {
+    position: absolute;
+    background: transparent;
     margin: 0;
-    color: #e3e3e3;
+    color: transparent;
+    caret-color: #e3e3e3;
     outline: 0;
-    border-color: #455d7a }
-  #katRepl > *::selection { background: #455d7a }
+    border-color: #455d7a;
+    width: calc(100% - 1em);
+    height: calc(50% - 1em) }
+  #highlight { overflow-y: scroll }
+  #highlight > * {
+    font-family: univers;
+    font-variant-ligatures: none;
+    word-break: break-word;
+    white-space: pre-wrap;
+    line-height: 1em }
+  #highlight > [data-label="ws"] { color: #d3dee9 }
+  #highlight > [data-label="encl"] { color: #5e81ac }
+  #highlight > [data-label="ident"] { color: #a3be8c }
+  #highlight > [data-label="atom"] { color: #d08770 }
+  #highlight > [data-label="piBinder"] { color: #81a1c1 }
+  #highlight > [data-label="pi"] { color: #b4616a }
+  #highlight > [data-label="lamBinder"] { color: #ebcb8b }
+  #highlight > [data-label="lam"] { color: #88c0d0 }
+  #highlight > [data-label="nameImpl"] { color: #8fbcbb }
+  #highlight > [data-label="let"] { color: #b48ead }
+  #katRepl { position: relative }
+  #source::selection { background: #455d7a80 }
+  #log::selection { background: #455d7a }
   #log {
     overflow-y: auto;
     word-break: break-word;
