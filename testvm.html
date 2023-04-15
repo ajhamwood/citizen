@@ -29,11 +29,11 @@ const logLevels = { error: true, warn: true, log: true, info: false, debug: fals
 
 var testKat = async () => {
   appStart = performance.now();
-  let data, err;
+  let data, err, memory = null;
   try {
-    const { returnAll } = await VM({ debug: { showPhase: false } })
-      .import({ path: "vm-lib/scratch.kat", memory: null });
-    data = await returnAll.run();
+    const { highlight, returnAll } = await VM({ debug: { showPhase: false } })
+      .import({ path: "vm-lib/scratch.kat" });
+    data = await returnAll.run(memory);
   } catch (e) { /*console.log(e);*/ err = { message: e.message, stack: e.stack } }
   if (err) tell.error.call({ addr: "test" }, "Kat error", "\n" + err.message, err.stack);
   else {

@@ -33,6 +33,8 @@ $.targets({
   async load () {
     // initPeerWC();
     citizen.emit("init");
+    
+    repl.emit("editorParse");
 
     await chord.emitAsync("startTimer");
 
@@ -97,17 +99,6 @@ $.targets({
           } }
         })
       } } } })
-    },
-
-    async editorRun (memory) {
-      let term, type, ctx, err, log = $("#log");
-      try {
-        const { normalForm } = await VM().import({ code: $("#source").value, memory });
-        ({ term, type, ctx } = await normalForm.run());
-      } catch (e) { err = e.message }
-      log.childNodes.length && $.load("hr", "#log");
-      log.appendChild(document.createTextNode(err ? err :
-        ((...res) => res.join(/\r\n?|\n/g.test(res.join('')) ? '\n\n' : '\n'))("type: " + type.toString(ctx), "term: " + term.toString(ctx))))
     }
   },
 
@@ -515,8 +506,14 @@ $.queries({
   "#nodeViewMenu > .sectionToggle": { click () { $("body").dataset.section = "katRepl" } },
   "menu > .button": { click () { chord.emit("createNode") } },
   "#katReplMenu > .sectionToggle": { click () { $("body").dataset.section = "nodeView" } },
-  "#run": { click () { citizen.emit("editorRun", new WebAssembly.Memory({ initial: 1, maximum: 1 })) } },
-  "#clear": { click () { $("#log").innerHTML = "" } }
+  "#run": { click () { repl.emit("editorRun", new WebAssembly.Memory({ initial: 1, maximum: 1 })) } },
+  "#clear": { click () { $("#log").innerHTML = "" } },
+  "#source": {
+    input (e) { repl.emit("editorParse", e) },
+    select () { repl.emit("select") },
+    "blur click" () { if (this.selectionStart === this.selectionEnd) repl.emit("deselect") },
+    scroll () { $("#highlight").scrollTop = $("#source").scrollTop }
+  }
 });
 
 function initPeerWC () {

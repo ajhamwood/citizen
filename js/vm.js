@@ -4,7 +4,7 @@ function VM (options = {}) {
   let { debug = { showPhase: false } } = options, phase = null;
   debug = (debugOpts => new Proxy(function () {}, { get ({}, prop) {
     let colour = (msg, thrown = false) => thrown && prop === "log" ? [ `%c${msg}`, "font-weight: bold; color: firebrick" ] : [msg],
-        declutter = v => { if (v?.hasOwnProperty("source")) { let { source, ...o } = v; return [o] } else return [v] },
+        declutter = v => { if (v?.hasOwnProperty("source")) { let { source, highlight, ...o } = v; return [o] } else return [v] },
         serialise = (ar, ctx, thrown) => ar.flatMap((o, i) => [ ...(i === 0 && ar.length > 1 ? ["|"] : []), ...colour("{", thrown),
           ...Object.entries(o ?? {}).flatMap(([k, v], i, ar) => [ `${k}:`,
             ...(typeof v === "string" ? [`\`${v}\``] : AST.isPrototypeOf(v?.constructor) ? [`${v.toString(ctx)}`, v] : [v]), ...(i === ar.length - 1 ? [] : [","]) ]), "}" ])
@@ -30,7 +30,7 @@ function VM (options = {}) {
       let thrown = false, value = null;
       const error = v => (thrown = true, v),
             join = (fn, v = value) => (r => { Result.prototype.isPrototypeOf(r) &&
-              (x => value = "ok" in x ? x.ok : error(x.err))(r.unwrap()); const { source, ...gctx } = globalContext; debug.log(value?.ctx, thrown)(value, { globalContext: clone(gctx) }); })
+              (x => value = "ok" in x ? x.ok : error(x.err))(r.unwrap()); const { source, highlight, ...gctx } = globalContext; debug.log(value?.ctx, thrown)(value, { globalContext: clone(gctx) }); })
               (value = fn(v, error));
       this.then = fn => (thrown || join(fn), this);  // On resolve
       this.catch = fn => (thrown && (thrown = false, join(fn)), this);  // On reject
@@ -42,7 +42,7 @@ function VM (options = {}) {
     static throw (e) { return new Result(({}, l) => l(e)) }  // Reject
   }
 
-  const globalContext = { metas: new Map(), checks: new Map(), pos: [], source: "" };
+  const globalContext = { metas: new Map(), checks: new Map(), pos: [], source: "", highlight: "" };
 
   class AST {
     static names (ctx) { let names = []; ctx.path.forEach(({ bind, define }) => names.push((bind ?? define).name)); return names }
@@ -131,6 +131,7 @@ function VM (options = {}) {
     };
 
   class Parser {  // Rewrite as a bifunctor on state + fail?
+    static labels = [ "ws", "encl", "ident", "atom", "piBinder", "pi", "lamBinder", "lam", "nameImpl", "let" ]
     static seq (ps) { return state => ps.reduce((acc, p) => acc.then(p), Result.pure(state)) }
     static do (ps) { return state => ps.reduceRight((acc, p) => (...ss) => p(...ss).then(s => acc(...ss, s)))(state) }
     static reql (p1, p2) { return state => p1(state).then(s1 => p2({ ...s1, data: state.data })) }
@@ -148,13 +149,14 @@ function VM (options = {}) {
       .reduce((acc, p) => Parser.alt(acc, p))(state) }
     static option (p) { return state => Parser.alt(p, Result.pure)(state) }
 
-    static any ({ source, offset, pos: [row, col], data }) { return new Result((ok, err) => source.length <= offset ?
-      err({ source, offset, pos: [row, col], data, fail: "_Any char" }) :
-      ok({ source, pos: /\r\n?|\n/g.test(source[offset]) ?
-        [row + 1, 1] : [row, col + 1], data: source[offset], offset: offset + 1 })) }
-    static eof ({ source, offset, pos, data }) { return new Result((ok, err) => source.length > offset ?
-      err({ source, offset, pos, data, fail: "_EOF" }) :
-      ok({ source, offset, pos, data: "" })) }
+    static any ({ source, highlight, offset, pos: [row, col], data }) { return new Result((ok, err) => source.length <= offset ?
+      err({ source, highlight, offset, pos: [row, col], data, fail: "_Any char" }) :
+      (highlight.labelling = highlight.labelling.substring(0, offset) + (Parser.labels.findIndex(x => x === highlight.label) ?? "x") + highlight.labelling.substring(offset + 1),
+        ok({ source, highlight, offset: offset + 1, pos: /\r\n?|\n/g.test(source[offset]) ?
+        [row + 1, 1] : [row, col + 1], data: source[offset] }))) }
+    static eof ({ source, highlight, offset, pos, data }) { return new Result((ok, err) => source.length > offset ?
+      err({ source, highlight, offset, pos, data, fail: "_EOF" }) :
+      ok({ source, highlight, offset, pos, data: "" })) }
     static satisfy (pred, msg) { return Parser.peek(state => Parser.any(state)
       .then((s, err) => pred(s) ? s : err({ ...s, fail: msg ?? "_Satisfy" }))) }
     static char (c) { return Parser.satisfy(s => s.data === c, `_Char "${c}"`) }
@@ -188,11 +190,11 @@ function VM (options = {}) {
 
         cut (p, msg, newPos) { return s => p(s).catch(e =>
           Parser.cut(Result.throw, e.fail[0] === "_" ? msg : undefined, this.setPos(newPos ?? { start: s.pos, end: e.pos }))(e)) },
-        region (p, glyphs) { let [ opener, closer ] = ({ parens: ["(", ")"], braces: ["{", "}"] })[glyphs];
+        encl (state, p, glyphs) { let [ opener, closer ] = ({ parens: ["(", ")"], braces: ["{", "}"] })[glyphs];
           return Parser.do([ Parser.char(opener),
             ({}, s) => Parser.seq([ Parser.option(this.ws), p ])(s),
             (x, y, s) => Parser.seq([ this.cut(Parser.char(closer), `Unclosed ${glyphs}`, { start: x.pos, end: y.pos }),
-              s1 => Parser.option(this.ws)(s1).then(s2 => ({ ...s2, data: s.data })) ])(s) ]) },
+              s1 => Parser.option(this.ws)(s1).then(s2 => ({ ...s2, data: s.data })) ])(s) ])(state) },
         symbol (str, isTest = true) { return state => Parser.map(Parser.guard(
           Parser.many((isTest ? this : Parser).satisfy(s => s.data === str[s.offset - state.offset - 1], `Symbol: "${str}"`)),
           data => data.length === str.length), data => data.join(""))(state) },
@@ -214,12 +216,11 @@ function VM (options = {}) {
             s => (this.setPos({ start: state.pos }), { ...s, data: new RVar({ name: s.data, pos: globalContext.pos }) })),
           Parser.map(this.keyword("U"), () => new RU({ pos: globalContext.pos })),
           Parser.map(this.keyword("_"), () => new RHole({ pos: globalContext.pos })),
-          this.region(this.term, "parens") ])(state) },
+          s => this.encl(s, this.term, "parens") ])(state) },
+        nameImpl (state, rhs, final) { return Parser.do([ this.ident, ({}, s) => Parser.seq([ this.keyword("="), this.cut(rhs, "Malformed named implicit") ])(s), final ])(state) },
         arg (state) { return Parser.choice([
-          Parser.seq([ this.region(Parser.do([ this.ident,
-            ({}, s) => Parser.seq([ this.keyword("="), this.cut(this.term, "Malformed named implicit argument") ])(s),
-            ({}, s, t) => ({ ...t, data: [ t.data, s.data ] }) ]), "braces"), s => ({ ...s, data: s.data.concat([ s.pos ]) }) ]),
-          Parser.seq([ this.region(this.term, "braces"), s => ({ ...s, data: [ s.data, true, s.pos ] }) ]),
+          Parser.seq([ s0 => this.encl(s0, s1 => this.nameImpl(s1, this.term, ({}, s, t) => ({ ...t, data: [ t.data, s.data ] })), "braces"), s => ({ ...s, data: s.data.concat([ s.pos ]) }) ]),
+          Parser.seq([ st => this.encl(st, this.term, "braces"), s => ({ ...s, data: [ s.data, true, s.pos ] }) ]),
           Parser.seq([ this.atom, s => ({ ...s, data: [ s.data, false, s.pos ] }) ]) ])(state) },
 
         binder (state) { return Parser.map(this.catchSymbol(Parser.alt(this.ident, this.keyword("_"))), data => [ data, globalContext.pos ])(state) },
@@ -228,12 +229,11 @@ function VM (options = {}) {
             { ...t, data: t.data.reduce((func, [arg, nameIcit, pos]) => new RApp({ func, arg, nameIcit, pos: this.setPos({ end: pos }) }), s.data) }) ])(state) },
 
         lamBinder (state) { return Parser.choice([
-          this.region(Parser.do([ this.binder, ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed explicit lambda") ]))(s),
+          st => this.encl(st, Parser.do([ this.binder, ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed explicit lambda") ]))(s),
             ({}, s, t) => ({ ...t, data: [ s.data[0], false, t.data instanceof Array ? null : t.data, [state.pos, t.pos] ] }) ]), "parens"),
-          Parser.peek(this.region(Parser.do([ this.binder, ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed implicit lambda") ]))(s),
+          Parser.peek(st => this.encl(st, Parser.do([ this.binder, ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed implicit lambda") ]))(s),
             ({}, s, t) => ({ ...t, data: [ s.data[0], true, t.data instanceof Array ? null : t.data, [state.pos, t.pos] ] }) ]), "braces")),
-          this.region(Parser.do([ this.ident, ({}, s) => Parser.seq([ this.keyword("="), this.cut(this.binder, "Malformed named implicit lambda") ])(s),
-            ({}, s, t) => ({ ...t, data: [ t.data[0], s.data, null, [state.pos, t.data[1]] ] }) ]), "braces"),
+          s0 => this.encl(s0, s1 => this.nameImpl(s1, this.binder, ({}, s, t) => ({ ...t, data: [ t.data[0], s.data, null, [state.pos, t.data[1]] ] })), "braces"),
           Parser.map(this.binder, ([ data, pos ]) => [ data, false, null, [state.pos, pos[1]] ]) ])(state) },
         lam (state) { return Parser.do([ this.keyword("\\"),
           ({}, s) => Parser.many(this.lamBinder)(s),
@@ -241,20 +241,22 @@ function VM (options = {}) {
           ({}, {}, s, t) => ({ ...t, data: s.data.reduceRight((acc, [name, nameIcit, mbType, pos]) =>
             new RLam({ name, nameIcit, mbType, body: acc, pos: this.setPos({ start: pos[0] }) }), t.data) }) ])(state) },
 
-        piBinder (state) { let icitBinder = glyphs => this.region(Parser.do([ Parser.many(this.binder),
+        piBinder (state) { let icitBinder = glyphs => st => this.encl(st, Parser.do([ Parser.many(this.binder),
             ({}, s) => (tm => glyphs === "parens" ? tm : Parser.alt(tm, s => ({ ...s, data: new RHole({ pos: globalContext.pos }) })))
               (Parser.reql(this.keyword(":"), this.term))(s),
             ({}, s, t) => ({ ...t, data: [ s.data, t.data, glyphs === "braces" ] }) ]), glyphs);
           return Parser.alt(icitBinder("braces"), icitBinder("parens"))(state) },
         
-        namedPi (state) { return Parser.do([ Parser.many(this.piBinder),
-          ({}, s) => Parser.seq([ this.cut(this.catchSymbol(this.keyword("->")), "Expected function type arrow"), this.term ])(s),
-          ({}, s, t) => ({ ...t, data: s.data.reduceRight((acc1, [bs, dom, isImpl]) =>
-            bs.reduceRight((cod, [name, pos]) => new RPi({ name, dom, cod, isImpl, pos: this.setPos({ start: pos[0] }) }), acc1), t.data) }) ])(state)
-              .then(s => (s.data.pos = this.setPos({ start: state.pos }), s)) },
-        anonPiOrSpine (state) { return Parser.seq([ this.cut(this.spine, "Malformed spine", {}),
-          Parser.option(Parser.do([ Parser.reql(this.keyword("->"), this.cut(this.catchSymbol(this.term), "Malformed term", {})),
-            (s, t) => ({ ...t, data: new RPi({ name: "_", dom: s.data, cod: t.data, isImpl: false, pos: this.setPos({ start: state.pos }) }) }) ])) ])(state) },
+        pi (state) { return Parser.choice([
+          Parser.mapFull(Parser.do([ Parser.many(this.piBinder),
+            ({}, s) => Parser.seq([ this.cut(this.catchSymbol(this.keyword("->")), "Expected function type arrow"), this.term ])(s),
+            ({}, s, t) => ({ ...t, data: s.data.reduceRight((acc1, [bs, dom, isImpl]) =>
+              bs.reduceRight((cod, [name, pos]) => new RPi({ name, dom, cod, isImpl, pos: this.setPos({ start: pos[0] }) }), acc1), t.data) }) ]),
+            s => (s.data.pos = this.setPos({ start: state.pos }), s)),
+          Parser.seq([ this.cut(this.spine, "Malformed spine", {}),
+            Parser.option(Parser.do([ Parser.reql(this.keyword("->"), this.cut(this.catchSymbol(this.term), "Malformed term", {})),
+              (s, t) => ({ ...t, data: new RPi({ name: "_", dom: s.data, cod: t.data, isImpl: false, pos: this.setPos({ start: state.pos }) }) }) ])) ])
+        ])(state) },
 
         let (state) { return Parser.seq([ this.keyword_("let"), this.cut(this.ident, "Malformed variable name", {}), Parser.do([
           Parser.alt(Parser.reql(this.keyword(":"), this.term), s => ({ ...s, data: new RHole({ pos: globalContext.pos }) })),
@@ -262,21 +264,25 @@ function VM (options = {}) {
           ({}, {}, s) => Parser.reql(this.cut(this.keyword(";"), 'Let missing ";"'), this.term)(s),
           (s, t, u, v) => ({ ...v, data: new RLet({ name: s.data, type: t.data, term: u.data, next: v.data, pos: this.setPos({ start: state.pos }) }) }) ]) ])(state) },
           
-        term (state) { return Parser.choice([ this.lam, this.let, this.namedPi, this.anonPiOrSpine ])(state) },
+        term (state) { return Parser.choice([ this.lam, this.let, this.pi ])(state) },
         parse (state) {
           globalContext.source = state.source;
+          globalContext.highlight = state.highlight;
           debug.log()("Parse:");
+          if (state.source.length === 0) return { data: new RU() };
           return Parser.seq([ Parser.option(this.ws), this.cut(Parser.reqr(this.term, Parser.eof), "No expression found", {}) ])(state)
             .catch(this.displayError)
-            .then(state => (debug.log()(`${state.data}`), { data: state.data })) },
+            .then(state => { debug.log()(`${state.data}`); globalContext.highlight = state.highlight; return { data: state.data } }) },
         displayError ({ fail }, err) {
           Object.defineProperty(globalContext, "pos", { writable: true });
           let lines = globalContext.source.split(/\r\n?|\n/);
           return err({ fail: fail[0] === "_" ? fail : `Parser error: ${fail}\n${lines[globalContext.pos[0][0] - 1]}\n${"-".repeat(globalContext.pos[0][1] - 1)}${
             "^".repeat((globalContext.pos[1][1] - globalContext.pos[0][1]) || 1)} ${globalContext.pos.join("-")}` }) }
-      })) this[k] = debug(fn, k, this);
+      })) this[k] = debug(Parser.labels.includes(k) ? function (state, ...rest) { let tmp;
+        [ tmp, state.highlight.label ] = [ state.highlight.label, k ];
+        return ([ tmp, state.highlight.label ] = [ fn.apply(this, [state, ...rest]), tmp ])[0] } : fn, k, this);
 
-      return source => (phase = "parser", Result.pure({ source, offset: 0, pos: [1, 0], data: null }))
+      return source => (phase = "parser", Result.pure({ source, highlight: { label: "ws", labelling: "" }, offset: 0, pos: [1, 0], data: null }))
         .then(this.parse)
         .catch((e, err) => err({ message: e.fail[0] === "_" ? "Unmanaged parser error" : e.fail }))
     }
@@ -719,12 +725,16 @@ function VM (options = {}) {
         if ("code" in opt && !("path" in opt)) ok(opt.code);
         else if ("path" in opt) fetch(opt.path).then(rsp => rsp.text()).then(ok).catch(err);
         else err({ message: "Load error: import option must be either 'code' or 'path'" })
-      })).then(src => ({
-        normalForm: { run: () => parseVMCode(src).then(evaluateVMProgram.normalForm).toPromise() },
-        typecheck: { run: () => parseVMCode(src).then(evaluateVMProgram.typecheck).toPromise() },
-        elaborate: { run: () => parseVMCode(src).then(evaluateVMProgram.elaborate).toPromise() },
-        returnAll: { run: () => parseVMCode(src).then(evaluateVMProgram.returnAll).toPromise() }
-      }))
+      })).then(src => {
+        const parsed = parseVMCode(src);
+        return {
+          highlight: globalContext.highlight.labelling,
+          normalForm: { run: memory => parsed.then(evaluateVMProgram.normalForm).toPromise() },
+          typecheck: { run: memory => parsed.then(evaluateVMProgram.typecheck).toPromise() },
+          elaborate: { run: memory => parsed.then(evaluateVMProgram.elaborate).toPromise() },
+          returnAll: { run: memory => parsed.then(evaluateVMProgram.returnAll).toPromise() }
+        }
+      })
     } }
   })
 }
