@@ -16,10 +16,7 @@ function formatTime (t) {  // TODO: reload all times in page if day ticks over
   return new Intl.DateTimeFormat('en-AU', config).format(t)
 }
 
-var citizen = new $.Machine({
-      sims, addr: "citizen", replTC: null, replDebounce: null, replSelectEnd: null,
-      syntaxLabels: [ "ws", "encl", "ident", "atom", "piBinder", "pi", "lamBinder", "lam", "nameImpl", "let" ]
-    }),
+var citizen = new $.Machine({ sims, addr: "citizen" }),
     chord = new $.Machine({
       nodes: [],
       baseTime: null,
@@ -36,6 +33,8 @@ $.targets({
   async load () {
     // initPeerWC();
     citizen.emit("init");
+    
+    repl.emit("editorParse");
 
     await chord.emitAsync("startTimer");
 
@@ -100,110 +99,6 @@ $.targets({
           } }
         })
       } } } })
-    },
-
-    editorParse (e) {
-      let highlightEl = $("#highlight"), sourceEl = $("#source");
-      clearTimeout(this.replDebounce);
-      this.replDebounce = setTimeout(async () => {
-        let source = sourceEl.value, err;
-        try {
-          const { highlight, normalForm } = await VM().import({ code: sourceEl.value });
-          if (highlight.length !== source.length) throw new Error();
-          this.replTC = normalForm;
-          citizen.emit("updateHighlight", highlight)
-        } catch (e) { err = e }
-        if (err) {
-          let span = document.createElement("span");
-          span.dataset.label = "ws";
-          span.innerText = source;
-          highlightEl.innerHTML = "";
-          highlightEl.append(span)
-        }
-        highlightEl.scrollTop = sourceEl.scrollTop;
-      }, 500);
-      let offset = sourceEl.selectionStart, range = document.createRange(), tmpRange = document.createRange();
-      if (highlightEl.children.length !== 0) {
-        range.setStartBefore(highlightEl.firstChild);
-        range.setEndAfter(highlightEl.lastChild);
-        tmpRange.setStartBefore(highlightEl.firstChild);
-        let breaks = $.all("br").reduce(([count, brs], el) => {
-          if (range.intersectsNode(el)) {
-            tmpRange.setEndBefore(el);
-            return [count + 1, brs.concat([tmpRange.toString().length + count])]
-          } else return [count, brs]
-        }, [1, []])[1];
-        console.log(breaks);
-        console.log(range.toString().length, breaks.length, range.toString().length + breaks.length, sourceEl.textLength)
-        console.log(range)
-        console.log(e.inputType, e)
-        let brs = 0, offsetEnd, str, span, findSpan = off => $.all("#highlight > *").find(el => {
-          tmpRange.setEndAfter(el);
-          brs += el.innerHTML.split("<br>").length - 1;
-          offsetEnd = tmpRange.toString().length + brs;
-          return offsetEnd >= off
-        });
-        switch (e.inputType) {
-          case "insertText":
-            span = findSpan(offset);
-            str = span.innerHTML.replaceAll("<br>", "\n");
-            if (offsetEnd - offset + 1 < str.length) {
-              let pos = str.length - offsetEnd + offset - 1;
-              if (span.dataset.label === "ws") span.innerHTML = str.substring(0, pos).replaceAll("\n", "<br>") + e.data + str.substring(pos).replaceAll("\n", "<br>");
-              else {
-                let spanl = document.createElement("span"),
-                    spant = document.createElement("span"),
-                    spanr = document.createElement("span");
-                spanl.dataset.label = spanr.dataset.label = span.dataset.label;
-                spant.dataset.label = "ws";
-                spanl.innerText = str.substring(0, pos).replaceAll("\n", "<br>");
-                spanr.innerText = str.substring(pos).replaceAll("\n", "<br>");
-                spant.innerText = e.data;
-                span.replaceWith(spanl, spant, spanr)
-              }
-            } else {
-              let spant = document.createElement("span");
-              spant.dataset.label = "ws";
-              spant.innerText = e.data;
-              highlightEl.insertBefore(spant, span)
-            }
-            break;
-          case "deleteContentBackward":
-            span = findSpan(offset + 1);
-            str = span.innerHTML.replaceAll("<br>", "\n");
-            let pos = str.length - offsetEnd + offset;
-            if (str.length === 1) span.remove();
-            else span.innerHTML = str.substring(0, pos).replaceAll("\n", "<br>") + str.substring(pos + 1).replaceAll("\n", "<br>")
-        }
-      }
-    },
-
-    select () { this.replSelectEnd = $("#source").selectionEnd },
-    deselect () { this.replSelectEnd = null },
-
-    async editorRun (memory) {
-      let term, type, ctx, err, log = $("#log");
-      try { ({ term, type, ctx } = await this.replTC.run(memory)) } catch (e) { err = e.message }
-      log.childNodes.length && $.load("hr", "#log");
-      log.appendChild(document.createTextNode(err ? err :
-        ((...res) => res.join(/\r\n?|\n/g.test(res.join('')) ? '\n\n' : '\n'))("type: " + type.toString(ctx), "term: " + term.toString(ctx))))
-    },
-
-    updateHighlight (labelling) {
-      let source = $("#source").value, highlightEl = $("#highlight"), prev = -1, text = "", span = null;
-      highlightEl.innerHTML = "";
-      for (let i = 0, label; i < labelling.length; i++) {
-        label = parseInt(labelling[i]);
-        if (label !== prev) {
-          if (span !== null) [text, span.innerText] = ["", text];
-          prev = label;
-          span = document.createElement("span");
-          span.dataset.label = this.syntaxLabels[label];
-          highlightEl.append(span);
-        }
-        text += source[i]
-      }
-      if (span !== null) span.innerText = text;
     }
   },
 
@@ -611,12 +506,12 @@ $.queries({
   "#nodeViewMenu > .sectionToggle": { click () { $("body").dataset.section = "katRepl" } },
   "menu > .button": { click () { chord.emit("createNode") } },
   "#katReplMenu > .sectionToggle": { click () { $("body").dataset.section = "nodeView" } },
-  "#run": { click () { citizen.emit("editorRun", new WebAssembly.Memory({ initial: 1, maximum: 1 })) } },
+  "#run": { click () { repl.emit("editorRun", new WebAssembly.Memory({ initial: 1, maximum: 1 })) } },
   "#clear": { click () { $("#log").innerHTML = "" } },
   "#source": {
-    input (e) { citizen.emit("editorParse", e) },
-    select () { citizen.emit("select") },
-    "blur click" () { citizen.emit("deselect") },
+    input (e) { repl.emit("editorParse", e) },
+    select () { repl.emit("select") },
+    "blur click" () { if (this.selectionStart === this.selectionEnd) repl.emit("deselect") },
     scroll () { $("#highlight").scrollTop = $("#source").scrollTop }
   }
 });

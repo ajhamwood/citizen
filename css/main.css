@@ -170,14 +170,20 @@ section {
   section { flex-direction: row }
   svg { flex: 1 1 100vh }
   menu { flex: 1 1 22em }
-  #source { border-width: 0 1px 0 0 } }
+  #source {
+    border-width: 0 1px 0 0;
+    width: calc(50% - 1em);
+    height: calc(100% - 1em) } }
 @media (max-aspect-ratio: 3/2) {
   section { flex-direction: column }
   svg { flex: 1 1 100vw }
   menu {
     flex: 1 0 auto;
     max-height: 50vh }
-  #source { border-width: 0 0 1px 0 } }
+  #source {
+    border-width: 0 0 1px 0;
+    width: calc(100% - 1em);
+    height: calc(50% - 1em) } }
 @media (max-aspect-ratio: 3/2) and (min-height: 600px) {
   svg { order: 1 } }
 @media (max-aspect-ratio: 3/2) and (max-width: 675px) {
