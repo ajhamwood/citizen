@@ -1,16 +1,3 @@
+U
 
-
-let Bit : U                                         = (B : U) -> B -> B -> B;
-let I : Bit                                         = \B i o. i;
-let O : Bit                                         = \B i o. o;
-let not : Bit -> Bit                                = \b B i o. b B o i;
-
-let List : U -> U                                   = \A. (L : U) -> L -> (A -> L -> L) -> L;
-let nil  : {A} -> List A                            = \L n c. n;
-let cons : {A} -> A -> List A -> List A             = \a as L n c. c a (as L n c);
-
-
-let Functor : (U -> U) -> U
-    = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
-let listFunctor : Functor List                      = \F. F (\fn la L n c. la L n (\a as. c (fn a) as));
-listFunctor (\map. map not (cons O (cons I nil)))
+-- hello

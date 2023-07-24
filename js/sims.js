@@ -103,7 +103,7 @@ var testModules = (() => {
     current_memory, grow_memory, align8, align16, align32, align64, i32, i64, f32, f64
   } = c;
   return {
-    fib: module([
+    fact: module([
       type_section([
         func_type([ i32 ], i32)  // type index = 0
       ]),

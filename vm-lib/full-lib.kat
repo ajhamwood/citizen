@@ -2,7 +2,6 @@
 
 let Void : U                                        = (V : U) -> V;
 let absurd : {A} -> Void -> A                       = \V. _;
-let neg : U -> U                                    = \P. P -> Void;
 
 
 -- Unit
@@ -36,10 +35,10 @@ let pred : Nat -> Nat                               = \n. snd {Nat} (n _ (\p. pa
 let minus : Nat -> Nat -> Nat                       = \m n. n _ pred m;
 let eqz : Nat -> Bit                                = \n. n _ (\z B i o. o) (\B i o. i);
 
-let fold : {A} -> (Nat -> A -> A) -> A -> Nat -> A
-    = \{A} reducer base n. snd {Nat} (n {Pair Nat A} (\p. pair (suc (fst p)) (p reducer)) (pair zero base));
+let foldnat : {A} -> (Nat -> A -> A) -> A -> Nat -> A
+    = \{A} reducer base n. snd {Nat} (n (Pair Nat A) (\p. pair (suc (fst p)) (p A (\m. reducer (suc m)))) (pair zero base));
 let fact : Nat -> Nat
-    = \n. fold {Nat} (\k acc. mul acc (suc k)) (suc zero) n;
+    = \n. foldnat {Nat} (\k acc. mul acc k) (suc zero) n;
 -- fact (suc (suc (suc zero)))
 
 
@@ -98,38 +97,70 @@ let reset : {W} -> Cont W W -> W                    = \m. run m (\x. x);
 let shift : {W A} -> ((A -> W) -> Cont W W) -> Cont W A = \e. cont (\k. reset (e k));
 
 
+
+-- Dependent Identity
+
+let DWrap : {T} -> T -> U                           = \{T} t. (W : {T} -> T -> U) -> ({V} -> (v : V) -> W {V} v) -> W {T} t;
+let dwrap : {T} -> (t : T) -> DWrap {T} t           = \{V} v W w. w {V} v;
+let undwrap : {T t} -> DWrap {T} t -> T             = \{V}{v} w. w (\_. V) (\_. v);
+-- tt (DWrap tt) ((\t. tt (DWrap {Unit} t) (dwrap t)) tt)
+
+
 -- Dependent Nats
 
-let DNat : Nat -> U                                 = \n. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN zero -> DN n;
-let dz : DNat zero                                  = \DN s z. z;
-let dsuc : {m : Nat} -> DNat m -> DNat (suc m)      = \n DN s z. s (n DN s z);
-let initWord : {n} -> DNat n -> Tree {n} Bit        = \dn. dn (\n. Tree {n} Bit) (\acc. node acc acc) (leaf O);
--- initWord (dsuc (dsuc dz))
+let DNat : {n} -> U                                   = \{n}. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN zero -> DN n;
+let dz : DNat {zero}                                  = \DN s z. z;
+let ds : {n} -> DNat {n} -> DNat {suc n}              = \n DN s z. s (n DN s z);
+let initWord : {n} -> DNat {n} -> LTree {n} Bit       = \dn. dn (\n. LTree {n} Bit) (\acc. node acc acc) (leaf O);
+-- initWord (ds (ds dz))
 
+
+-- Finite Sets
+
+let Fin : {n} -> U                                  = \{n}. (F : Nat -> U) -> ({m} -> F m -> F (suc m)) -> ({m} -> F (suc m)) -> F n;
+let fz : {n} -> Fin {suc n}                         = \F s z. z;
+let fs : {n} -> Fin {n} -> Fin {suc n}              = \f F s z. s (f F s z);
+
+let foldfin : {A : Nat -> U}{n} ->
+    ({m} -> Fin {suc m} -> A m -> A (suc m)) ->
+    ({m} -> A (suc m)) -> Fin {suc n} -> A (suc n)
+    = \{A}{n} reducer base fn. snd {Fin {suc n}} (fn
+        (\n. Pair (Fin {n}) (A n))
+        (\{m} p. pair (fs (fst p)) (p (A (suc m)) (\f. reducer {m} (fs f))))
+        (\{m}. pair fz (base {m})));
+-- foldfin {\_. Bit} (\fn acc. not acc) O (fs (fs fz))
 
 -- Length-indexed Vectors
 
-let Vec : {n} -> U -> U                             = \{n} A. (V : Nat -> U) -> V zero -> ({m : Nat} -> A -> V m -> V (suc m)) -> V n;
+let Vec : {n} -> U -> U                             = \{n} A. (V : Nat -> U) -> V zero -> ({m} -> A -> V m -> V (suc m)) -> V n;
 let nil : {A} -> Vec {zero} A                       = \V n c. n;
 let cons : {A n} -> A -> Vec {n} A -> Vec {suc n} A = \a as V n c. c a (as V n c);
 let head : {A n} -> Vec {suc n} A -> A              = \{A} v. v (\_. A) _ (\x xs. x);
 let tail : {A n} -> Vec {suc n} A -> Vec {n} A      = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
 -- tail (cons I (cons O nil))
 
+let foldvec : {A}{B : Nat -> U}{n} ->
+    ({m} -> Vec {suc m} A -> B m -> B (suc m)) ->
+    B zero -> Vec {n} A -> B n
+    = \{A}{B}{n} reducer base v. snd {Vec {n} A} (v
+        (\n. Pair (Vec {n} A) (B n))
+        (pair nil base)
+        (\{m} a p. pair (cons a (fst p)) (p (B (suc m)) (\v. reducer {m} (cons a v)))));
+-- foldvec {Bit}{\_. Bit} (\v acc. or acc (head v)) O (cons I (cons O nil))
 
--- Height-indexed Binary Trees
+-- Height-indexed Binary Leaf-only Trees
 
-let Tree : {n} -> U -> U                            = \{n} A. (T : Nat -> U) -> (A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
-let leaf : {A} -> A -> Tree {zero} A                = \a T l n. l a;
-let node : {A n} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A = \ta tb T l n. n (ta T l n) (tb T l n);
-let divine : {A} -> Tree {zero} A -> A              = \{A} t. t (\_. A) (\a. a) _;
-let lbranch : {A n} -> Tree {suc n} A -> Tree {n} A = \{A}{n} t. t (\_. Tree {n} A) _ (\ta tb. ta);
-let rbranch : {A n} -> Tree {suc n} A -> Tree {n} A = \{A}{n} t. t (\_. Tree {n} A) _ (\ta tb. tb);
+let LTree : {n} -> U -> U                           = \{n} A. (T : Nat -> U) -> (A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
+let leaf : {A} -> A -> LTree {zero} A               = \a T l n. l a;
+let node : {A n} -> LTree {n} A -> LTree {n} A -> LTree {suc n} A = \ta tb T l n. n (ta T l n) (tb T l n);
+let divine : {A} -> LTree {zero} A -> A             = \{A} t. t (\_. A) (\a. a) _;
+let lbranch : {A n} -> LTree {suc n} A -> LTree {n} A = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. ta);
+let rbranch : {A n} -> LTree {suc n} A -> LTree {n} A = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. tb);
 -- divine (leaf O)
 -- lbranch (node (leaf O) (leaf I))
 
-let treeFunctor : Functor Tree                      = \F. F (\fn ta T l n. ta T (\a. l (fn a)) n);
--- treeFunctor (\map. map not (initWord (dsuc (dsuc dz))))
+let ltreeFunctor : Functor LTree                     = \F. F (\fn ta T l n. ta T (\a. l (fn a)) n);
+-- ltreeFunctor (\map. map not (initWord (ds (ds dz))))
 
 
 -- Bush
@@ -160,7 +191,14 @@ let somebush : Bush Bit
 -- mapbush not somebush
 
 
--- Decided / Decidable
+-- Nullary Relations
+
+let neg : U -> U                                    = \P. P -> Void;
+let contradiction : {P Q} -> P -> neg P -> Q        = \p notp. absurd (notp p);
+
+let Reflects : U -> Bit -> U                          = \P b. (R : Bit -> U) -> (P -> R I) -> (neg P -> R O) -> R b;
+let ofyes : {P} -> P -> Reflects P I                  = \p R y n. y p;
+let ofno : {P} -> neg P -> Reflects P O               = \negp R y n. n negp;
 
 let Dec : U -> U                                    = \P. Either P (neg P);
 let Decidable : {A B} -> (A -> B -> U) -> U         = \{A}{B} p. (x : A) -> (y : B) -> Dec (p x y);
@@ -185,17 +223,18 @@ let listFunctor : Functor List                      = \F. F (\fn la L n c. la L 
 
 let App : (U -> U) -> U
     = \(F : U -> U). {T} -> ((pure : {A} -> A -> F A) ->
-                     (ap : {A B} -> F (A -> B) -> F A -> F B) -> F T) -> F T;
+        (ap : {A B} -> F (A -> B) -> F A -> F B) -> F T) -> F T;
 let appFunctor : {F} -> App F -> Functor F          = \app F. F (\{A}{B} fn fa. app (\pure ap. ap {A}{B} (pure fn) fa));
 let listApp : App List                              = \A. A (\x. cons x nil) (\fs xs. fs _ nil (\f bs. concat (listFunctor (\map. map f xs)) bs));
 -- listApp (\pure ap. ap (cons not (cons (\x. x) nil)) (cons O (cons I nil)))
 
-let appComp : {F G : U -> U} -> App F -> App G -> App (\X. G (F X))
+let appComp : {F G : U -> U} -> App F -> App G -> App (\X. F (G X))
     = \{F}{G} appF appG A. A
-        (\{X} x. appG {F X} (\pureG apG. pureG (appF {X} (\pureF apF. pureF x))))
-        (\{X}{Y} f x. (appFunctor appF) (\map. appG (\pureG apG. map apG (appF (\pureF apF. apF {X}{Y} f) s))));
+        (\{X} fgx. appF {G X} (\pureF apF. pureF (appG {X} (\pureG apG. pureG fgx))))
+        (\{X}{Y} fgf fgx. appF (\pureF apF. apF (apF {G (X -> Y)}{G X -> G Y}
+            (pureF (\gf gx. appG (\pureG apG. apG gf gx))) fgf) fgx));
 -- (appComp listApp listApp) (\pure ap. ap
---     (cons (cons not nil) nil)
+--     (cons (cons not nil) (cons (cons (\x. x) nil) nil))
 --     (cons (cons O (cons I nil)) (cons (cons I nil) nil)))
 
 
@@ -203,7 +242,7 @@ let appComp : {F G : U -> U} -> App F -> App G -> App (\X. G (F X))
 
 let Monad : (U -> U) -> U
     = \(F : U -> U). {T} -> ((return : {A} -> A -> F A) ->
-                     (bind : {A B} -> F A -> (A -> F B) -> F B) -> F T) -> F T;
+        (bind : {A B} -> F A -> (A -> F B) -> F B) -> F T) -> F T;
 let contMonad : {W} -> Monad (Cont W)               = \F. F (\x. cont (\k. k x)) (\m f. cont (\k. run m (\v. run (f v) k)));
 
 let mapM : {A B}{M : U -> U}{monad : Monad M} -> (A -> M B) -> List A -> M (List B)

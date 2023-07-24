@@ -41,8 +41,8 @@ $.targets({
     viz.emit("init");
     new ResizeObserver(() => viz.emit('resize')).observe($("svg"));
 
-    let { instance } = await testWasm(testModules.fib);
-    tell.log.call(citizen, "Wasm fib test", instance.exports.factorial(8));
+    let { instance } = await testWasm(testModules.fact);
+    tell.log.call(citizen, "Wasm factorial test", instance.exports.factorial(8));
 
     // await testKat()
   },

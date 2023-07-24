@@ -6,6 +6,9 @@ var repl = new $.Machine({
 
 $.targets({
   repl: {
+    // BUG: undo breaks highlighting
+    // TODO: focus source -> show cursor line/column numbers in bottom right, select -> show range
+    // TODO: select -> type "(" or "{" -> enclosure
     editorParse (e) { // Doesn't capture insertReplacementText input events
       const debounceTime = typeof e === "undefined" ? 0 : this.debounceTime,
             highlightEl = $("#highlight"), sourceEl = $("#source");
@@ -157,7 +160,7 @@ $.targets({
               let { code, highlight } = this.history.cur = this.history.past[ix];
               this.history.past = this.history.past.slice(0, ix);
               sourceEl.value = code;
-              if (typeof highlight !== "undefined") this.emit("updateHighlight", highlight)
+              this.emit("updateHighlight", highlight)
             }
 
         }
@@ -171,7 +174,8 @@ $.targets({
       try { ({ term, type, ctx } = await this.TC.run(memory)) } catch (e) { err = e.message }
       log.childNodes.length && $.load("hr", "#log");
       log.appendChild(document.createTextNode(err ? err :
-        ((...res) => res.join(/\r\n?|\n/g.test(res.join('')) ? '\n\n' : '\n'))("type: " + type.toString(ctx), "term: " + term.toString(ctx))))
+        ((...res) => res.join(/\r\n?|\n/g.test(res.join('')) ? '\n\n' : '\n'))("type: " + type.toString(ctx), "term: " + term.toString(ctx))));
+      log.scroll(0, 1e6)
     },
   
     updateHighlight (labelling) {

@@ -808,7 +808,9 @@ const
     drop: (r, n) => new instr_pre1(0x1a, r, n),
     // Select one of two values based on condition
     // Result R => (Op I32, Op R, Op R) -> Op R
-    select: (cond, trueRes, falseRes) => new isntr_pre(0x1b, trueRes.r, [ trueRes, falseRes, cond ]),
+    select: (cond, trueRes, falseRes) => {
+      assert(trueRes.r === falseRes.r);
+      return new instr_pre(0x1b, trueRes.r, [ trueRes, falseRes, cond ]) },
 
     // Variable access
     // Result R => (R, uint32) -> Op R

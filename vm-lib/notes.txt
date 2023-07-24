@@ -42,25 +42,25 @@ let Nat : U                             = {N} -> (N -> N) -> N -> N;
 let zero : Nat                          = \s z. z;
 let suc : Nat -> Nat                    = \n s z. s (n s z);
 
-let Tree : {n} -> U -> U
+let LTree : {n} -> U -> U
     = \{n} A. (T : Nat -> U) -> (A -> A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
-let leaf : {A} -> A -> A -> Tree {zero} A
+let leaf : {A} -> A -> A -> LTree {zero} A
     = \a b T l n. l a b;
-let node : {A n} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A
+let node : {A n} -> LTree {n} A -> LTree {n} A -> LTree {suc n} A
     = \ta tb T l n. n (ta T l n) (tb T l n);
 -- eliminators
 
 let Functor : (U -> U) -> U
     = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
-let treeFunctor : Functor Tree
+let ltreeFunctor : Functor LTree
     = \f. f (\fn ta T l n. ta T (\a b. l (fn a) (fn b)) n);
 
-let maptree : {A B n} -> (A -> B) -> Tree {n} A -> Tree {n} B
-    = \{A}{B} fn tree. tree (\n. Tree {n} B) (\a b. leaf (fn a) (fn b)) node;
+let mapltree : {A B n} -> (A -> B) -> LTree {n} A -> LTree {n} B
+    = \{A}{B} fn ltree. ltree (\n. LTree {n} B) (\a b. leaf (fn a) (fn b)) node;
 
-let sometree : Tree Bit
+let someltree : LTree Bit
     = node (node (leaf O I) (leaf I O)) (node (leaf I O) (leaf O I));
-maptree not sometree
+mapltree not someltree
 
 
 
@@ -83,7 +83,8 @@ let pred : Nat -> Nat =
     \n. snd {Nat} (n (\p. pair (suc (fst p)) (fst p)) (pair zero zero));
 
 let fold : {A} -> (Nat -> A -> A) -> A -> Nat -> A
-    = \{A} reducer base n. snd {Nat} (n {Pair Nat A} (\p. pair (suc (fst p)) (p reducer)) (pair zero base));
+    = \{A} reducer base n. snd {Nat}
+        (n {Pair Nat A} (\p. pair (suc (fst p)) (p reducer)) (pair zero base));
 
 let fact : Nat -> Nat
     = \n. fold {Nat} (\k acc. mul acc (suc k)) (suc zero) n;
@@ -169,15 +170,15 @@ let DNat : Nat -> U                     = \n. (DN : Nat -> U) -> ({m} -> DN m ->
 let dz : DNat zero                      = \DN s z. z;
 let dsuc : {m : Nat} -> DNat m -> DNat (suc m) = \n DN s z. s (n DN s z);
 
-let Tree : {n} -> U -> U
+let LTree : {n} -> U -> U
     = \{n} A. (T : Nat -> U) -> (A -> A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
-let leaf : {A} -> A -> A -> Tree {zero} A
+let leaf : {A} -> A -> A -> LTree {zero} A
     = \a b T l n. l a b;
-let node : {A n} -> Tree {n} A -> Tree {n} A -> Tree {suc n} A
+let node : {A n} -> LTree {n} A -> LTree {n} A -> LTree {suc n} A
     = \ta tb T l n. n (ta T l n) (tb T l n);
 
-let initWord : {n} -> DNat n -> Tree {n} Bit
-    = \dn. dn (\n. Tree {n} Bit) (\acc. node acc acc) (leaf O O);
+let initWord : {n} -> DNat n -> LTree {n} Bit
+    = \dn. dn (\n. LTree {n} Bit) (\acc. node acc acc) (leaf O O);
 initWord (dsuc (dsuc dz))
 
 
@@ -185,7 +186,7 @@ initWord (dsuc (dsuc dz))
 let bitAdd : Bit -> Bit -> Bit -> Pair Bit Bit
     = \a b c. pair (carry a b c) (sum a b c);
 
-let addWithCarry : {n} -> Tree {n} Bit -> Tree {n} Bit -> Pair Bit (Tree {n} Bit)
+let addWithCarry : {n} -> LTree {n} Bit -> LTree {n} Bit -> Pair Bit (LTree {n} Bit)
     = \ta tb. x;
 let word0 = leaf O I;
 let word1 = leaf I I;
@@ -197,20 +198,20 @@ let head : {A n} -> Vec {suc n} A -> A  = \{A} v. v (\_. A) _ (\x xs. x);
 let tail : {A n} -> Vec {suc n} A -> Vec {n} A = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
 -- tail (cons I (cons O nil))
 
-let getBit : {n} -> Tree {n} Bit -> Vec {suc n} Bit -> Bit
-    = \{n} tree vec. fst ((tail vec) (\k. Pair Bit (Tree {sub n k} Bit))
-        (pair (head vec) tree) (\{k} bit acc. (snd acc) _
+let getBit : {n} -> LTree {n} Bit -> Vec {suc n} Bit -> Bit
+    = \{n} ltree vec. fst ((tail vec) (\k. Pair Bit (LTree {sub n k} Bit))
+        (pair (head vec) ltree) (\{k} bit acc. (snd acc) _
             (\a b. pair (bit _ a b) (initWord dz))
             (\ta tb. pair bit (bit _ ta tb))));
 let addr : Vec {suc zero} Bit
     = cons O nil;
-let word0 : Tree {zero} Bit
+let word0 : LTree {zero} Bit
     = leaf O I;
 getBit word0 addr
 
 
-(\n. addr (\k. (sub (suc n) k) _ (\_. Tree {sub n k} Bit) Bit)
-    word0 (\{k} bit acc. acc ((sub (suc n) k) _ (\_. Tree {sub n k} Bit) Bit) (\a b. bit Bit a b) (\ta tb. bit (Tree {sub n k} Bit) ta tb))) zero
+(\n. addr (\k. (sub (suc n) k) _ (\_. LTree {sub n k} Bit) Bit)
+    word0 (\{k} bit acc. acc ((sub (suc n) k) _ (\_. LTree {sub n k} Bit) Bit) (\a b. bit Bit a b) (\ta tb. bit (Tree {sub n k} Bit) ta tb))) zero
 
 
 
@@ -237,39 +238,35 @@ let neg : U -> U                        = \P. P -> Void;
 let Dec : U -> U                        = \P. Either P (neg P);
 let Decidable : {A B} -> (A -> B -> U) -> U = \{A}{B} p. (x : A) -> (y : B) -> Dec (p x y);
 
-let head : {A n} -> Vec {suc n} A -> A  = \{A} v. v (\_. A) _ (\x xs. x);
-let tail : {A n} -> Vec {suc n} A -> Vec {n} A = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
--- tail (cons I (cons O nil))
-
-let lbranch : {A n} -> Tree {suc n} A -> Tree {n} A
-    = \{A}{n} t. t (\_. Tree {n} A) _ (\ta tb. ta);
-let rbranch : {A n} -> Tree {suc n} A -> Tree {n} A
-    = \{A}{n} t. t (\_. Tree {n} A) _ (\ta tb. tb);
-let divine : {A} -> Tree {zero} A -> A
+let lbranch : {A n} -> LTree {suc n} A -> LTree {n} A
+    = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. ta);
+let rbranch : {A n} -> LTree {suc n} A -> LTree {n} A
+    = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. tb);
+let divine : {A} -> LTree {zero} A -> A
     = \{A} t. t (\_. A) (\a. a) _;
 -- divine (leaf O)
 -- lbranch (node (leaf O) (leaf I))
 
-let getBit : {n} -> Tree {n} Bit -> Vec {n} Bit -> Bit
-    = \{n} tree vec. divine (vec (\k. Tree {sub n k} Bit) tree
-        (\{k} bit acc. bit (Tree {sub n k} Bit) (lbranch {Bit}{sub n k} acc) (rbranch {Bit}{sub n k} acc)));
+let getBit : {n} -> LTree {n} Bit -> Vec {n} Bit -> Bit
+    = \{n} ltree vec. divine (vec (\k. LTree {sub n k} Bit) ltree
+        (\{k} bit acc. bit (LTree {sub n k} Bit) (lbranch {Bit}{sub n k} acc) (rbranch {Bit}{sub n k} acc)));
 getBit word0 addr
 
 
 
 -- Bit addressing
 
-let getBit : {n} -> Tree {n} Bit -> Vec {n} Bit -> Tree {zero} Bit
-    = \{n} tree vec. snd (vec (\k. Pair Nat (Tree {sub n k} Bit)) (pair n tree)
+let getBit : {n} -> LTree {n} Bit -> Vec {n} Bit -> LTree {zero} Bit
+    = \{n} ltree vec. snd (vec (\k. Pair Nat (LTree {sub n k} Bit)) (pair n ltree)
         (\{k} bit acc. pair (pred (fst acc))
-            (bit (Tree {sub n k} Bit)
-                ((snd acc) (\_. Tree {sub n k} Bit) _ (\ta tb. ta))
-                ((snd acc) (\_. Tree {sub n k} Bit) _ (\ta tb. tb)))));
--- bit (Pair Nat (Tree {fst acc} Bit)) (lbranch {Bit}{fst acc} (snd acc)) (rbranch {Bit}{fst acc} (snd acc))
+            (bit (LTree {sub n k} Bit)
+                ((snd acc) (\_. LTree {sub n k} Bit) _ (\ta tb. ta))
+                ((snd acc) (\_. LTree {sub n k} Bit) _ (\ta tb. tb)))));
+-- bit (Pair Nat (LTree {fst acc} Bit)) (lbranch {Bit}{fst acc} (snd acc)) (rbranch {Bit}{fst acc} (snd acc))
 
 let addr : Vec {suc zero} Bit
     = cons O nil;
-let word0 : Tree {suc zero} Bit
+let word0 : LTree {suc zero} Bit
     = node (leaf O) (leaf O);
 getBit word0 addr
 
@@ -326,3 +323,211 @@ let appComp : {F G : U -> U} -> App F -> App G -> App (\X. G (F X))
 
 let Trav : (U -> U) -> U
     = \(F : U -> U). {T} -> ((traverse : {G : U -> U}{A B}{app : App G} -> (A -> G B) -> F A -> G (F B)) -> F T) -> F T;
+
+
+-- Finite sets
+
+let Fin : {n} -> U                                  = \{n}. (F : Nat -> U) -> ({m} -> F m -> F (suc m)) -> ({m} -> F (suc m)) -> F n;
+let fz : {n} -> Fin {suc n}                         = \F s z. z;
+let fs : {n} -> Fin {n} -> Fin {suc n}              = \f F s z. s (f F s z);
+
+let lookup : {A n} -> Fin {n} -> Vec {n} A -> A
+--    = \{A} f v. v (\_. A) _ (\a as. f _ (\_. as) a);
+    = \{A}{m} f V n c. snd {Nat} (f (\_. Pair Nat A) (\p. pair (suc (fst p)) (p c)) (pair zero n));
+lookup (cons O (cons I nil)) (fs fz)
+
+
+
+-- Dependent Sums (not possible)
+
+let Sigma : (A : U) -> (A -> U) -> {a} -> U          = \A B {a}. (P : A -> U) -> ((a : A) -> B a -> P a) -> P a;
+let sigma : {A}{B : A -> U} -> (a : A) -> B a -> Sigma A B = \a b P p. p a b;
+let dfst : {A}{B : A -> U} -> Sigma A B -> A         = \{A=A} s. s _ (\a b. a);
+let dsnd : {A}{B : A -> U} -> (p : Sigma A B) -> B (dfst p) = \{B=B} s. s _ (\a b. b);
+
+-- Dependent Sums
+
+let Sigma : (A : U) -> (A -> U) -> U =
+    \A B. (fst : A) -> (snd : B fst) -> (S : (A : U) -> (A -> U) -> U) -> (s : (a : A) -> B a -> S A B) ->
+      S A B;
+let sigma : {A}{B : A -> U} -> Sigma A B = \a b S s. s a b;
+the (Sigma Bit (\_. Bit)) (sigma O I)
+
+
+run {Fin {suc (suc zero)}}{Fin {suc (suc zero)}} (somefin (\n. Cont (Fin {n}) (Fin {n})) (\{n} f. cont (\k. k (run {Fin {suc n}}{Fin {n}} (cont (\k. k (run f (\x. x)))) fs))) (\{n}. cont (\k. k fz))) (\x. x)
+
+run {Vec {suc (suc zero)} Bit}{Vec {suc (suc zero)} Bit}
+    (somevec
+        (\n. Cont (Vec {n} Bit) (Vec {n} Bit))
+        (cont (\k. k nil))
+        (\{n} a as. cont (\k. k (run
+            {Vec {suc n} Bit}{Vec {n} Bit}
+            (cont (\k. k (run as (\x. x))))
+            (cons a)))))
+    (\x. x)
+
+(the
+    ({n : Nat} -> Bit -> Cont (Vec {suc n} Bit) (Vec {n} Bit) -> Cont (Vec {suc n} Bit) (Vec {suc n} Bit))
+    (\{n} a as. cont
+        {Vec {suc n} Bit}{Vec {suc n} Bit}
+        (\k. k (run
+            {Vec {suc n} Bit}{Vec {n} Bit} as (cons a)))))
+{zero} I (cont (\k. k nil))
+
+
+
+run {Vec {suc (suc zero)} Bit}{Vec {zero} Bit -> Vec {suc (suc zero)} Bit}
+    (somevec
+        (\n. Cont (Vec {zero} Bit -> Vec {n} Bit) (Vec {zero} Bit -> Vec {n} Bit))
+        (cont (\k. k (\x. x)))
+        (\{n} a as. cont (\k. k (run
+            {Vec {zero} Bit -> Vec {suc n} Bit}{Vec {zero} Bit -> Vec {n} Bit}
+            (cont (\k. k (run as (cons a))))
+            (\x. x)))))
+    (\k. k nil)
+
+
+run
+    {{n} -> Vec {n} Bit -> Vec {suc n} Bit}
+    {{n} -> Vec {n} Bit -> Vec {suc n} Bit}
+    (cont
+        {{n} -> Vec {n} Bit -> Vec {suc n} Bit}
+        {{n} -> Vec {n} Bit -> Vec {n} Bit}
+        (\k {n} (v : Vec {n} Bit). k (\w. w) v))
+    (cons a)
+
+
+run
+            {{n} -> Vec {n} Bit -> Vec {suc n} Bit}
+            {{n} -> Vec {n} Bit -> Vec {n} Bit}
+            (cont
+                {{n} -> Vec {n} Bit -> Vec {n} Bit}
+                {{n} -> Vec {n} Bit -> Vec {n} Bit}
+                (\q. run (cont (\k. k (\x. x))) (q (\x. x))))
+            ((\x. x) (cons I))
+nil
+
+run (somevec
+    _
+    (cont (\k. k (\x. x)))
+    (\{n} a as. cont
+        (\k. run (cont
+            (\q. run as (q (cons a)))) (k (\x. x)))))
+(\f. f nil)
+                
+cont
+                {{n} -> Vec {n} Bit -> Vec {n} Bit}
+                {{n} -> Vec {n} Bit -> Vec {n} Bit}
+                (\q. run (cont (\k. k (\x. x))) (q (\x. x)))
+
+let fold : {A} -> (Nat -> A -> A) -> A -> Nat -> A
+    = \{A} reducer base n. snd {Nat} (n (Pair Nat A) (\p. pair (suc (fst p)) (p reducer)) (pair zero base));
+
+
+nil => base, O : nil => f O base, I : O : nil => f I (f O base)
+nil => base, O : nil => f base O, I : O : nil => f (f base O) I
+
+let foldvec : {A n} -> ({m} -> Vec {suc m} A -> A -> A) -> A -> Vec {n} A -> A
+    = \{A}{n} reducer base v. snd {Vec {n} A} (v
+        (\n. Pair (Vec {n} A) A)
+        (pair nil base)
+        (\a p. pair (cons a (fst p)) (p A (\v. reducer (cons a v)))));
+foldvec {Bit} (\v acc. or acc (head v)) O (cons I (cons O nil))
+
+foldtree {Bit} (\b. b) (\lt acc. acc) (\lt acc. acc) sometree
+
+let dfoldvec : {A}{B : Nat -> U}{n} -> ({m} -> Vec {suc m} A -> B m -> B (suc m)) -> B zero -> Vec {n} A -> B n
+    = \{A}{B}{n} reducer base v. snd {Vec {n} A} (v
+        (\n. Pair (Vec {n} A) (B n))
+        (pair nil base)
+        (\{m} a p. pair (cons a (fst p)) (p (B (suc m)) (\v. reducer {m} (cons a v)))));
+dfoldvec {Bit}{\n. LTree {n} Bit -> Bit}
+    (\{m} v acc lt. acc ((head v) (LTree {suc m} Bit -> LTree {m} Bit) (lbranch {Bit}) (rbranch {Bit}) lt))
+    divine somevec sometree
+
+let dfoldfin : {A : Nat -> U}{n} -> ({m} -> Fin {suc m} -> A m -> A (suc m)) -> ({m} -> A (suc m)) -> Fin {suc n} -> A (suc n)
+    = \{A}{n} reducer base fn. snd {Fin {suc n}} (fn
+        (\n. Pair (Fin {n}) (A n))
+        (\{m} p. pair (fs (fst p)) (p (A (suc m)) (\f. reducer {m} (fs f))))
+        (\{m}. pair fz (base {m})));
+dfoldfin {\_. Bit} (\fn acc. not acc) O (fs (fs fz))
+
+
+(O (LTree Bit -> LTree Bit) (lbranch {Bit}{zero}) (rbranch {Bit}{zero})) (node (leaf I) (leaf O))
+divine (lbranch {Bit}{zero} (node (leaf I) (leaf O)))
+
+
+
+dfoldfin {Bit}
+    (\{m} fn acc v. acc (fn (\n. Vec {n} Bit) tail v))
+    head fz (cons O nil)
+
+
+
+let lookup : {A}{n} ->
+    ({m} -> Pair (Vec {suc m} A) (Fin {suc m}) -> A -> A) ->
+    ({m} -> Pair (Vec {suc m} A) (Fin {suc m}) -> A) ->
+    Pair (Vec {suc n} A) (Fin {suc n}) -> A
+    = \{A}{n} reducer base p. snd {Pair (Vec {suc n} A) (Fin {suc n})} (p A (\v fn. pair
+        (v _ _ _)
+        (fn _ _ _)));
+
+let lookup : {A n} ->
+    ({m} -> Pair (Vec {suc m} A) (Fin {suc m}) -> A -> A) ->
+    ({m} -> Pair (Vec {suc m} A) (Fin {suc m}) -> A) ->
+    Vec {suc n} A -> Fin {suc n} -> A
+    = \{A}{n} reducer base v fn. snd {Pair (Vec {suc n} A) (Fin {suc n})} (pair
+        (reducer)
+        (base));
+
+let lookup : {A n} -> Vec {suc n} A -> Fin {suc n} -> A
+    = \{A}{n} v fn. fn (\_. A) _ (head v);
+lookup {Bit} (cons O nil) fz
+
+let foldlookup : {A n} ->
+    ({m} -> Pair (Fin {suc m}) (Vec {suc m} A) -> Pair (Fin {m}) (Vec {m} A) -> Pair (Fin {suc m}) (Vec {suc m} A)) ->
+    ({m} -> Pair (Fin {suc m}) (Vec {suc m} A)) -> Vec {suc n} A -> Fin {suc n} -> A
+    = \{A}{n} reducer base v fn. head (snd {Fin {suc n}} (fn
+        (\n. Pair (Fin {n}) (Vec {n} A))
+        (\{m} f p. p (Pair (Fin {suc m}) (Vec {suc m} A)) (\fn v. reducer {m} (pair (fs fn) (cons a v)) (pair fn v)))
+        (\{m}. pair fz (base {m}))));
+foldlookup {Bit}{\n. Pair (Fin {n}) (Vec {n} A)}
+    (\v acc. or acc (head v)) O (cons I (cons O nil))
+
+
+foldvec {Bit}{\n. Fin {suc n}} (\v acc. if (head v) acc (fs acc)) fz (cons I (cons O nil))
+
+
+let Reflects : U -> Bit -> U                          = \P b. (R : Bit -> U) -> (P -> R I) -> (neg P -> R O) -> R b;
+let ofyes : {P} -> P -> Reflects P I                  = \p R y n. y p;
+let ofno : {P} -> neg P -> Reflects P O               = \negp R y n. n negp;
+
+let of : {P}{b : Bit} -> b U P (neg P) -> Reflects P b
+    = \{P}{b} p. b (Reflects P b) (the (Reflects P I) (ofyes p)) (ofno p);
+
+
+let of : {P}{b : Bit} -> Either (P -> Reflects P I) ((neg P) -> Reflects P O)
+    = \{P}{b}. b (_) (left ofyes) (right ofno);
+
+let of : {P}{b : Bit} -> Either P (neg P) -> Reflects P b
+    = \{P}{b} e. e (Reflects P b) (ofyes) (ofno);
+
+
+someDNatPair (Fin {suc (suc zero)}) (\a b.
+    (\n. b (\m. Fin {suc (add m n)}) (\{m} acc. fs {suc (add m n)} acc) (fz {n}))
+    (a _ suc zero))
+
+the (Fin {suc zero}) ((\n. dz (\m. Fin {suc (add m n)}) (\{m} acc. fs {suc (add m n)} acc) (fz {n})) zero)
+(\n. dz (\m. Fin {suc (add m n)}) (\{m} acc. fs {suc (add m n)} acc) (fz {n})) zero
+
+the (Fin {suc zero}) ((\n. dz (\m. Fin {suc (add m n)}) fs fz) zero)
+
+
+
+-- Identity index
+
+let Wrap : {T} -> T -> U                              = \{T} t. (W : {T} -> T -> U) -> ({V} -> (v : V) -> W {V} v) -> W {T} t;
+let wrap : {T} -> (t : T) -> Wrap {T} t               = \{V} v W w. w {V} v;
+let unwrap : {T t} -> Wrap {T} t -> T                 = \{V}{v} w. w (\_. V) (\_. v);
+
+tt (Wrap tt) ((\t. tt (Wrap {Unit} t) (wrap t)) tt)

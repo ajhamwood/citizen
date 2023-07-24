@@ -1,40 +1,85 @@
+let the : (A : U) -> A -> A                           = \A a. a;
+
+-- Void
+
+let Void : U                                        = (V : U) -> V;
+let absurd : {A} -> Void -> A                       = \V. _;
+
 -- Booleans
 
-let Bit : U                                         = (B : U) -> B -> B -> B;
-let I : Bit                                         = \B i o. i;
-let O : Bit                                         = \B i o. o;
-let not : Bit -> Bit                                = \b B i o. b B o i;
+let Bit : U                                           = (B : U) -> B -> B -> B;
+let I : Bit                                           = \B i o. i;
+let O : Bit                                           = \B i o. o;
+let not : Bit -> Bit                                  = \b B i o. b B o i;
+let or : Bit -> Bit -> Bit                            = \x y B i o. x B (x B i o) (y B i o);
+let if : {R} -> Bit -> R -> R -> R                    = \p a b. p _ a b;
 
--- Lists
+-- Either
 
-let List : U -> U                                   = \A. (L : U) -> L -> (A -> L -> L) -> L;
-let nil  : {A} -> List A                            = \L n c. n;
-let cons : {A} -> A -> List A -> List A             = \a as L n c. c a (as L n c);
-let concat : {A} -> List A -> List A -> List A      = \{A} la lb. la (List A) lb cons;
+let Either : U -> U -> U                            = \A B. (E : U) -> (A -> E) -> (B -> E) -> E;
+let left : {A B} -> A -> Either A B                 = \a E l r. l a;
+let right : {A B} -> B -> Either A B                = \b E l r. r b;
 
--- Functors
+-- Products
 
-let Functor : (U -> U) -> U
-    = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
-let listFunctor : Functor List                      = \F. F (\fn la L n c. la L n (\a as. c (fn a) as));
--- listFunctor (\map. map not (cons O (cons I nil)))
+let Pair : U -> U -> U                                = \A B. (P : U) -> (A -> B -> P) -> P;
+let pair : {A B} -> A -> B -> Pair A B                = \a b P p. p a b;
+let fst : {A B} -> Pair A B -> A                      = \s. s _ (\a b. a);
+let snd : {A B} -> Pair A B -> B                      = \s. s _ (\a b. b);
 
+-- Nats
 
--- Applicatives
+let Nat : U                                           = (N : U) -> (N -> N) -> N -> N;
+let zero : Nat                                        = \N s z. z;
+let suc : Nat -> Nat                                  = \n N s z. s (n N s z);
+let add : Nat -> Nat -> Nat                           = \a b N s z. a N s (b N s z);
+let pred : Nat -> Nat                                 = \n. snd {Nat} (n _ (\p. pair (suc (fst p)) (fst p)) (pair zero zero));
 
-let App : (U -> U) -> U
-    = \(F : U -> U). {T} -> ((pure : {A} -> A -> F A) ->
-                     (ap : {A B} -> F (A -> B) -> F A -> F B) -> F T) -> F T;
-let appFunctor : {F} -> App F -> Functor F          = \app F. F (\{A}{B} fn fa. app (\pure ap. ap {A}{B} (pure fn) fa));
-let listApp : App List                              = \A. A (\x. cons x nil) (\fs xs. fs _ nil (\f bs. concat (listFunctor (\map. map f xs)) bs));
--- listApp {Bit} (\pure ap. ap (cons not (cons (\x. x) nil)) (cons O (cons I nil)))
+-- Length-indexed Vectors
 
+let Vec : {n} -> U -> U                               = \{n} A. (V : Nat -> U) -> V zero -> ({m} -> A -> V m -> V (suc m)) -> V n;
+let nil : {A} -> Vec {zero} A                         = \V n c. n;
+let cons : {A n} -> A -> Vec {n} A -> Vec {suc n} A   = \a as V n c. c a (as V n c);
+let head : {A n} -> Vec {suc n} A -> A                = \{A} v. v (\_. A) _ (\x xs. x);
+let tail : {A n} -> Vec {suc n} A -> Vec {n} A        = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
 
-let appComp : {F G : U -> U} -> App F -> App G -> App (\X. G (F X))
-    = \{F}{G} appF appG A. A
-        (\{X} x. appG {F X} (\pureG apG. pureG (appF {X} (\pureF apF. pureF x))))
-        (\{X}{Y} f x. appF (\pureF apF. apF (appG (\pureG apG. apF (pureF {G X -> G Y} (apG {X}{Y})) f)) x));
---        (\f x. (appFunctor appF) (\map. appG (\{X}{Y} pureG apG. map {X}{Y} apG (appF {G (X -> Y) -> G X -> G Y} (\pureF apF. apF {X}{Y})) f) s));
-(appComp listApp listApp) (\pure ap. ap
-    (cons (cons not nil) nil)
-    (cons (cons O (cons I nil)) (cons (cons I nil) nil)))
+-- Height-indexed Binary Leaf-only Trees
+
+let LTree : {n} -> U -> U                             = \{n} A. (T : Nat -> U) -> (A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
+let leaf : {A} -> A -> LTree {zero} A                 = \a T l n. l a;
+let node : {A n} -> LTree {n} A -> LTree {n} A -> LTree {suc n} A = \ta tb T l n. n (ta T l n) (tb T l n);
+let divine : {A} -> LTree {zero} A -> A               = \{A} t. t (\_. A) (\a. a) _;
+let lbranch : {A n} -> LTree {suc n} A -> LTree {n} A = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. ta);
+let rbranch : {A n} -> LTree {suc n} A -> LTree {n} A = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. tb);
+
+-- Dependent Nats
+
+let DNat : {n} -> U                                   = \{n}. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN zero -> DN n;
+let dz : DNat {zero}                                  = \DN s z. z;
+let ds : {n} -> DNat {n} -> DNat {suc n}              = \n DN s z. s (n DN s z);
+let initWord : {n} -> DNat {n} -> LTree {n} Bit       = \dn. dn (\n. LTree {n} Bit) (\acc. node acc acc) (leaf O);
+
+-- Finite Sets
+
+let Fin : {n} -> U                                  = \{n}. (F : Nat -> U) -> ({m} -> F m -> F (suc m)) -> ({m} -> F (suc m)) -> F n;
+let fz : {n} -> Fin {suc n}                         = \F s z. z;
+let fs : {n} -> Fin {n} -> Fin {suc n}              = \f F s z. s (f F s z);
+
+-- Testing
+
+let somefin : Fin {suc (suc zero)} = fs fz;
+let somevec : Vec {suc (suc zero)} Bit = cons I (cons O nil);
+let sometree : LTree {suc (suc zero)} Bit
+    = node (node (leaf O) (leaf I)) (node (leaf I) (leaf O));
+
+let foldvec : {A}{B : Nat -> U}{n} ->
+    ({m} -> Vec {suc m} A -> B m -> B (suc m)) ->
+    B zero -> Vec {n} A -> B n
+    = \{A}{B}{n} reducer base v. snd {Vec {n} A} (v
+        (\n. Pair (Vec {n} A) (B n))
+        (pair nil base)
+        (\{m} a p. pair (cons a (fst p)) (p (B (suc m)) (\v. reducer {m} (cons a v)))));
+(foldvec {Bit}{\n. Pair Nat (DNat {n})}
+  (\v acc. acc _ (\m dn. pair ((head v) Nat m (suc m)) (ds dn)))
+  (pair zero dz) (cons I (cons I nil))) _
+  (\os dn. dn (\n. Fin {suc (add n os)}) (\{n} acc. fs {suc (add n os)} acc) (fz {suc os}))
