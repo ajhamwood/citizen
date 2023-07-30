@@ -338,21 +338,6 @@ lookup (cons O (cons I nil)) (fs fz)
 
 
 
--- Dependent Sums (not possible)
-
-let Sigma : (A : U) -> (A -> U) -> {a} -> U          = \A B {a}. (P : A -> U) -> ((a : A) -> B a -> P a) -> P a;
-let sigma : {A}{B : A -> U} -> (a : A) -> B a -> Sigma A B = \a b P p. p a b;
-let dfst : {A}{B : A -> U} -> Sigma A B -> A         = \{A=A} s. s _ (\a b. a);
-let dsnd : {A}{B : A -> U} -> (p : Sigma A B) -> B (dfst p) = \{B=B} s. s _ (\a b. b);
-
--- Dependent Sums
-
-let Sigma : (A : U) -> (A -> U) -> U =
-    \A B. (fst : A) -> (snd : B fst) -> (S : (A : U) -> (A -> U) -> U) -> (s : (a : A) -> B a -> S A B) ->
-      S A B;
-let sigma : {A}{B : A -> U} -> Sigma A B = \a b S s. s a b;
-the (Sigma Bit (\_. Bit)) (sigma O I)
-
 
 run {Fin {suc (suc zero)}}{Fin {suc (suc zero)}} (somefin (\n. Cont (Fin {n}) (Fin {n})) (\{n} f. cont (\k. k (run {Fin {suc n}}{Fin {n}} (cont (\k. k (run f (\x. x)))) fs))) (\{n}. cont (\k. k fz))) (\x. x)
 
@@ -531,3 +516,98 @@ let wrap : {T} -> (t : T) -> Wrap {T} t               = \{V} v W w. w {V} v;
 let unwrap : {T t} -> Wrap {T} t -> T                 = \{V}{v} w. w (\_. V) (\_. v);
 
 tt (Wrap tt) ((\t. tt (Wrap {Unit} t) (wrap t)) tt)
+
+
+let Eq : {T} -> T -> T -> U
+    = \{T} x y. (P : T -> T -> U) -> ((t : T) -> (u : T) -> P t u) -> P x y;
+let refl : {T}{t : T} -> Eq {T} t t                   = \{T}{t} P r. r t t;
+let unrefl : {T x y} -> Eq {T} x y -> Pair T T        = \{T}{x}{y} r. r (\_ _. Pair T T) (\_ _. pair x y);
+
+let cong : (f : {B} -> (A : U) -> B){x y} -> Eq x y -> Eq (f x) (f y)
+    = \f {x}{y} r P cr. cr (f x) (f y);
+let sym : {x y} -> Eq x y -> Eq y x
+    = \{x}{y} r P sr. sr y x;
+let trans : {x y z} -> Eq x y -> Eq y z -> Eq x z
+    = \{x}{y}{z} rxy ryz P tr. tr x z;
+
+let sucAssoc : {m n} -> Eq (add (suc m) n) (suc (add m n)) = refl;
+
+--tt ({m n} -> Eq (add m n) (add n m)) ({m} -> m (Eq _ _) 
+--  (\n. trans refl refl)
+--  (trans refl refl))
+tt (Eq {Bit} I O) (\P r. r I O)
+
+
+
+let Eq : {T} -> T -> T -> U = \{T} x y. (P : T -> U) -> P x -> P y;
+let refl : {T t} -> Eq {T} t t = \P pt. pt;
+
+--\(n : Nat). n ({a b} -> Eq (add a (suc b)) (suc (add a b)))
+--  (\acc. _) (tt (Eq (add zero (suc b)) (suc (add zero b))) refl)
+
+--\(b : Nat). tt (Eq (add zero (suc b)) (suc (add zero b))) refl
+--\b (acc : {a} -> Eq (add (suc a) (suc b)) (suc (add (suc a) b))). tt (_) (refl (\n. EP (suc n)) acc)
+tt ({a : Nat}(b : Nat) -> Eq (add (suc a) (suc b)) (suc (add (suc a) b))) (\(b : Nat) P px. refl _ px)
+
+--\N s z. s (m N s (n N s z))
+--\N s z. m N s (s (n N s z))
+
+--\N s z. s (n N s z)
+
+
+--\N s z. s (_)
+--\N s z. s (_)
+
+--\n. (add zero (suc n))
+--\n. suc (add zero n)
+
+--\m n. add m (suc n)
+--\m n. suc (add m n)
+
+-- Equality
+{-
+let Vec : {n} -> U -> U                             = \{n} A. (V : Nat -> U) -> V zero -> ({m} -> A -> V m -> V (suc m)) -> V n;
+let Eq : {T} -> T -> T -> U = \{T} x y. (E : T -> U) -> ({t} -> E t -> E t) -> E x -> E y;
+let refl : {T t} -> Eq {T} t t = \E e et. e et;
+
+let cong : {A B}(f : A -> B){x y} -> Eq x y -> Eq (f x) (f y)
+    = \{A}{B} f {x}{y} r E e exy. r _ e (e exy);
+
+
+-tt (Eq {Bit} I I) (cong {Bit}{Bit} not {O}{O} (refl {Bit}{O}))
+-}
+
+
+
+let EquivNats : IsEquivalence {Nat} Eq
+    = \E. E refl (\{x}{y} pxy. _) (\{i}{j}{k} reljk relij. _);
+--tt (Symmetric (Eq {Nat})) (\{x}{y} pxy. x _ (\acc. acc) pxy)
+
+
+let PairSum : {k} -> U
+    = \{k}. (PS : Nat -> U) -> ({m n} -> DNat {m} -> DNat {n} -> PS (add m n)) -> PS k;
+let pairzero : PairSum {zero}
+    = \PS p. p dz dz;
+let lsuc : {n} -> PairSum {n} -> PairSum {suc n}
+    = \ps PS p. ps PS (\{m}{n} l r. p {suc m}{n} (ds {m} l) r);
+let rsuc : {n} -> PairSum {n} -> PairSum {suc n}
+    = \ps PS p. ps PS (\{m}{n} l r. p {m}{suc n} l (ds {n} r));
+
+(\{A}{n}(fn : Fin {n})(v : Vec {n} A). (\k. v (\_. A) _ (\{n} a acc. (add (minus k n) (minus n k)) A (\_. acc) a))
+    (fn (\_. Nat) suc zero)) {Bit} (fs fz) (cons I (cons O nil))
+
+
+
+let cmpBitVec : {n} -> Vec {n} Bit -> Vec {n} Bit -> Bit
+    = \{n} v1 v2. v1 (\_. Bit) I (\{m} a acc. and acc (xnor a (lookup {m=n} m v2)));
+--let cmpWord : {n} -> LTree {n} Bit -> LTree {n} Bit -> Bit
+--    = \{n} tr1 tr2. proj2 {Nat}{\n. Vec {n} Bit} (tr1);
+
+
+tt (Eq (node (leaf I) (leaf I)) (node (leaf I) (leaf I))) refl
+
+
+{-let getBit : {n} -> Vec {n} Bit -> LTree {n} Bit -> Bit = lookupTree {Bit};
+let setBit : {n} -> Vec {n} Bit -> LTree {n} Bit -> Bit -> LTree {n} Bit
+    = \{n} v tr b. tr (\n. LTree {n} Bit) (\b. leaf b) (\{m} l r. node l r);
+setBit (cons I nil) (initWord (ds dz))-}

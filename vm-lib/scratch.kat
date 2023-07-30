@@ -1,9 +1,7 @@
-let the : (A : U) -> A -> A                           = \A a. a;
+-- Unit
 
--- Void
-
-let Void : U                                        = (V : U) -> V;
-let absurd : {A} -> Void -> A                       = \V. _;
+let Unit : U                                        = (T : U) -> T -> T;
+let tt : Unit                                       = \T t. t;
 
 -- Booleans
 
@@ -12,13 +10,6 @@ let I : Bit                                           = \B i o. i;
 let O : Bit                                           = \B i o. o;
 let not : Bit -> Bit                                  = \b B i o. b B o i;
 let or : Bit -> Bit -> Bit                            = \x y B i o. x B (x B i o) (y B i o);
-let if : {R} -> Bit -> R -> R -> R                    = \p a b. p _ a b;
-
--- Either
-
-let Either : U -> U -> U                            = \A B. (E : U) -> (A -> E) -> (B -> E) -> E;
-let left : {A B} -> A -> Either A B                 = \a E l r. l a;
-let right : {A B} -> B -> Either A B                = \b E l r. r b;
 
 -- Products
 
@@ -33,7 +24,15 @@ let Nat : U                                           = (N : U) -> (N -> N) -> N
 let zero : Nat                                        = \N s z. z;
 let suc : Nat -> Nat                                  = \n N s z. s (n N s z);
 let add : Nat -> Nat -> Nat                           = \a b N s z. a N s (b N s z);
+
 let pred : Nat -> Nat                                 = \n. snd {Nat} (n _ (\p. pair (suc (fst p)) (fst p)) (pair zero zero));
+let minus : Nat -> Nat -> Nat                         = \m n. n _ pred m;
+
+
+-- Equality
+
+let Eq : {T} -> T -> T -> U = \{T} x y. (P : T -> U) -> P x -> P y;
+let refl : {t} -> Eq t t = \P pt. pt;
 
 -- Length-indexed Vectors
 
@@ -52,34 +51,10 @@ let divine : {A} -> LTree {zero} A -> A               = \{A} t. t (\_. A) (\a. a
 let lbranch : {A n} -> LTree {suc n} A -> LTree {n} A = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. ta);
 let rbranch : {A n} -> LTree {suc n} A -> LTree {n} A = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. tb);
 
--- Dependent Nats
 
-let DNat : {n} -> U                                   = \{n}. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN zero -> DN n;
-let dz : DNat {zero}                                  = \DN s z. z;
-let ds : {n} -> DNat {n} -> DNat {suc n}              = \n DN s z. s (n DN s z);
-let initWord : {n} -> DNat {n} -> LTree {n} Bit       = \dn. dn (\n. LTree {n} Bit) (\acc. node acc acc) (leaf O);
+let lookupNat : {A m} -> Nat -> Vec {m} A -> A
+    = \{A} n v. v (\_. A) _ (\{m} a acc. (add (minus m n) (minus n m)) A (\_. acc) a);
+let lookupTree : {A n} -> Vec {n} Bit -> LTree {n} A -> A
+    = \{A}{n} v tr. tr (\_. A) (\a. a) (\{m} l r. (lookupNat {m=n} m v) _ r l);
 
--- Finite Sets
-
-let Fin : {n} -> U                                  = \{n}. (F : Nat -> U) -> ({m} -> F m -> F (suc m)) -> ({m} -> F (suc m)) -> F n;
-let fz : {n} -> Fin {suc n}                         = \F s z. z;
-let fs : {n} -> Fin {n} -> Fin {suc n}              = \f F s z. s (f F s z);
-
--- Testing
-
-let somefin : Fin {suc (suc zero)} = fs fz;
-let somevec : Vec {suc (suc zero)} Bit = cons I (cons O nil);
-let sometree : LTree {suc (suc zero)} Bit
-    = node (node (leaf O) (leaf I)) (node (leaf I) (leaf O));
-
-let foldvec : {A}{B : Nat -> U}{n} ->
-    ({m} -> Vec {suc m} A -> B m -> B (suc m)) ->
-    B zero -> Vec {n} A -> B n
-    = \{A}{B}{n} reducer base v. snd {Vec {n} A} (v
-        (\n. Pair (Vec {n} A) (B n))
-        (pair nil base)
-        (\{m} a p. pair (cons a (fst p)) (p (B (suc m)) (\v. reducer {m} (cons a v)))));
-(foldvec {Bit}{\n. Pair Nat (DNat {n})}
-  (\v acc. acc _ (\m dn. pair ((head v) Nat m (suc m)) (ds dn)))
-  (pair zero dz) (cons I (cons I nil))) _
-  (\os dn. dn (\n. Fin {suc (add n os)}) (\{n} acc. fs {suc (add n os)} acc) (fz {suc os}))
+lookupTree {Bit} (cons I (cons O nil)) (node (node (leaf I) (leaf I)) (node (leaf O) (leaf I)))

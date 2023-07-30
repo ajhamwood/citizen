@@ -31,8 +31,8 @@ var testKat = async () => {
   appStart = performance.now();
   let data, err, memory = null;
   try {
-    const { highlight, returnAll } = await VM({ debug: { showPhase: "evaluator" } })
-      .import({ path: "vm-lib/test.kat" });
+    const { highlight, returnAll } = await VM({ debug: { showPhase: false } })
+      .import({ path: "vm-lib/scratch.kat" });
     data = await returnAll.run(memory);
   } catch (e) { /*console.log(e);*/ err = { message: e.message, stack: e.stack } }
   if (err) tell.error.call({ addr: "test" }, "Kat error", "\n" + err.message, err.stack);

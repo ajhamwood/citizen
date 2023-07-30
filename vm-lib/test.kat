@@ -1,3 +1,161 @@
-U
+-- Void
 
--- hello
+let Void : U                                          = (V : U) -> V;
+let absurd : {A} -> Void -> A                         = \V. _;
+
+-- Unit
+
+let Unit : U                                          = (T : U) -> T -> T;
+let tt : Unit                                         = \T t. t;
+
+-- Booleans
+
+let Bit : U                                           = (B : U) -> B -> B -> B;
+let I : Bit                                           = \B i o. i;
+let O : Bit                                           = \B i o. o;
+let not : Bit -> Bit                                  = \b B i o. b B o i;
+let or : Bit -> Bit -> Bit                            = \x y B i o. x B (x B i o) (y B i o);
+
+-- Products
+
+let Pair : U -> U -> U                                = \A B. (P : U) -> (A -> B -> P) -> P;
+let pair : {A B} -> A -> B -> Pair A B                = \a b P p. p a b;
+let fst : {A B} -> Pair A B -> A                      = \s. s _ (\a b. a);
+let snd : {A B} -> Pair A B -> B                      = \s. s _ (\a b. b);
+
+-- Nats
+
+let Nat : U                                           = (N : U) -> (N -> N) -> N -> N;
+let zero : Nat                                        = \N s z. z;
+let suc : Nat -> Nat                                  = \n N s z. s (n N s z);
+let add : Nat -> Nat -> Nat                           = \a b N s z. a N s (b N s z);
+
+let pred : Nat -> Nat
+    = \n. snd {Nat} (n _ (\p. pair (suc (fst p)) (fst p)) (pair zero zero));
+let minus : Nat -> Nat -> Nat                         = \m n. n _ pred m;
+let diff : Nat -> Nat -> Nat                          = \m n. add (minus m n) (minus n m);
+
+
+-- Equality
+
+let Eq : {T} -> T -> T -> U = \{T} x y. (P : T -> U) -> P x -> P y;
+let refl : {t} -> Eq t t = \P pt. pt;
+
+-- Dependent Nats
+
+let DNat : {n} -> U
+    = \{n}. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN zero -> DN n;
+let dz : DNat {zero}                                  = \DN s z. z;
+let ds : {n} -> DNat {n} -> DNat {suc n}              = \n DN s z. s (n DN s z);
+
+-- Length-indexed Vectors
+
+let Vec : {n} -> U -> U
+    = \{n} A. (V : Nat -> U) -> V zero -> ({m} -> A -> V m -> V (suc m)) -> V n;
+let nil : {A} -> Vec {zero} A                         = \V n c. n;
+let cons : {A n} -> A -> Vec {n} A -> Vec {suc n} A   = \a as V n c. c a (as V n c);
+let head : {A n} -> Vec {suc n} A -> A                = \{A} v. v (\_. A) _ (\x xs. x);
+let tail : {A n} -> Vec {suc n} A -> Vec {n} A        = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
+
+-- Height-indexed Binary Leaf-only Trees
+
+let LTree : {n} -> U -> U
+    = \{n} A. (T : Nat -> U) -> (A -> T zero) -> ({m} -> T m -> T m -> T (suc m)) -> T n;
+let leaf : {A} -> A -> LTree {zero} A                 = \a T l n. l a;
+let node : {A n} -> LTree {n} A -> LTree {n} A -> LTree {suc n} A = \ta tb T l n. n (ta T l n) (tb T l n);
+let divine : {A} -> LTree {zero} A -> A               = \{A} t. t (\_. A) (\a. a) _;
+let lbranch : {A n} -> LTree {suc n} A -> LTree {n} A = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. ta);
+let rbranch : {A n} -> LTree {suc n} A -> LTree {n} A = \{A}{n} t. t (\_. LTree {n} A) _ (\ta tb. tb);
+
+let initWord : {n} -> DNat {n} -> LTree {n} Bit       = \dn. dn (\n. LTree {n} Bit) (\acc. node acc acc) (leaf O);
+
+
+-- Nullary Relations
+
+let neg : U -> U                                      = \P. P -> Void;
+
+let Reflects : U -> Bit -> U                          = \P b. (R : Bit -> U) -> (P -> R I) -> (neg P -> R O) -> R b;
+let ofyes : {P} -> P -> Reflects P I                  = \p R y n. y p;
+let ofno : {P} -> neg P -> Reflects P O               = \negp R y n. n negp;
+
+let Dec : (P : U) -> U
+    = \P. {D} -> ((does : Bit) -> (proof : Reflects P does) -> D) -> D;
+let because : {P} -> (does : Bit) -> Reflects P does -> Dec P
+    = \does proof D. D does proof;
+let yes : {P} -> P -> Dec P = \p. because I (ofyes p);
+let no : {P} -> neg P -> Dec P = \negp. because O (ofno negp);
+
+let Decidable : {A B} -> (A -> B -> U) -> U           = \{A}{B} Rel. (x : A)(y : B) -> Dec (Rel x y);
+
+-- Binary Relations
+
+let on : {A B C : U} -> (B -> B -> C) -> (A -> B) -> A -> A -> C
+    = \{A}{B}{C} star f x y. star (f x) (f y);
+
+let Reflexive : {A} -> (A -> A -> U) -> U             = \Rel. {x} -> Rel x x;
+let reflexive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Reflexive Rel -> Reflexive (on Rel f)
+    = \_ _ refl. refl;
+let Symmetric : {A} -> (A -> A -> U) -> U             = \Rel. {x y} -> Rel x y -> Rel y x;
+let symmetric : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Symmetric Rel -> Symmetric (on Rel f)
+    = \_ _ sym. sym;
+let Transitive : {A} -> (A -> A -> U) -> U            = \Rel. {i j k} -> Rel j k -> Rel i j -> Rel i k;
+let transitive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Transitive Rel -> Transitive (on Rel f)
+    = \_ _ trans. trans;
+let IsEquivalence : {A} -> (A -> A -> U) -> U
+    = \{A} Rel. {R} -> ((refl : Reflexive {A} Rel) -> (sym : Symmetric {A} Rel) ->
+        (trans : Transitive {A} Rel) -> R) -> R;
+let isEquivalence : {A B}{Rel : A -> A -> U} ->
+                    (f : B -> A) -> IsEquivalence Rel -> IsEquivalence (on Rel f)
+    = \{Rel=Rel} f eq E. eq (\refl sym trans. E
+        (reflexive f Rel refl) (symmetric f Rel sym) (transitive f Rel trans));
+
+let IsDecEquivalence : {A} -> (A -> A -> U) -> U
+    = \{A} Rel. {R} -> ((DecRel : Decidable Rel) -> (isEquiv : IsEquivalence Rel) -> R) -> R;
+let decidable : {A B}(f : B -> A)(Rel : A -> A -> U) -> Decidable Rel -> Decidable (on Rel f)
+    = \f _ dec x y. dec (f x) (f y);
+let isDecEquivalence : {A B}{Rel : A -> A -> U}(f : B -> A) ->
+                       IsDecEquivalence Rel -> IsDecEquivalence (on Rel f)
+    = \{Rel=Rel} f deq DE. deq (\DecRel isEquiv. DE (decidable f Rel DecRel) (isEquivalence {Rel=Rel} f isEquiv));
+
+let Setoid : U
+    = {S} -> ((T : U) -> (Rel : T -> T -> U) -> (isEquiv : IsEquivalence Rel) -> S) -> S;
+let DecSetoid : U
+    = {S} -> ((T : U) -> (Rel : T -> T -> U) -> (isDecEquiv : IsDecEquivalence Rel) -> S) -> S;
+
+-- Dependent Sums
+
+let Sigma : (A : U)(B : A -> U){a : A} -> U
+    = \A B {a}. (S : A -> U) -> ((fst : A)(snd : B fst) -> S fst) -> S a;
+let dpair : {A}{B : A -> U}(a : A)(b : B a) -> Sigma A B {a}
+    = \a b S s. s a b;
+let proj1 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> A
+    = \{A} s. s (\_. A) (\fst snd. fst);
+let proj2 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> B a
+    = \{B=B} s. s B (\fst snd. snd);
+
+
+-- Words
+
+let lookup : {A m} -> Nat -> Vec {m} A -> A
+    = \{A} n v. v (\_. A) _ (\{m} a acc. (diff m n) A (\_. acc) a);
+let lookupTree : {A n} -> Vec {n} Bit -> LTree {n} A -> A
+    = \{A}{n} v tr. tr (\_. A) (\a. a) (\{m} l r. (lookup {m=n} m v) _ r l);
+let update : {A m} -> Nat -> Vec {m} A -> A -> Vec {m} A
+    = \{A}{n} n v newA. v (\n. Vec {n} A) nil (\{m} a as. cons ((diff m n) A (\_. newA) a) as);
+--update (zero) (cons I (cons I nil)) O
+
+let and : Bit -> Bit -> Bit = \x y B i o. x B (y B i o) (x B i o);
+let xnor : Bit -> Bit -> Bit = \x y B i o. x B (y B i o) (y B o i);
+let cmpBitVec : {n} -> Vec {n} Bit -> Vec {n} Bit -> Bit
+    = \{n} v1 v2. v1 (\_. Bit) I (\{m} a acc. and acc (xnor a (lookup {m=n} m v2)));
+--let cmpWord : {n} -> LTree {n} Bit -> LTree {n} Bit -> Bit
+--    = \{n} tr1 tr2. proj2 {Nat}{\n. Vec {n} Bit} (tr1);
+
+
+tt (Eq (node (leaf I) (leaf I)) (node (leaf I) (leaf I))) refl
+
+
+{-let getBit : {n} -> Vec {n} Bit -> LTree {n} Bit -> Bit = lookupTree {Bit};
+let setBit : {n} -> Vec {n} Bit -> LTree {n} Bit -> Bit -> LTree {n} Bit
+    = \{n} v tr b. tr (\n. LTree {n} Bit) (\b. leaf b) (\{m} l r. node l r);
+setBit (cons I nil) (initWord (ds dz))-}
