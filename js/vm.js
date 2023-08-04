@@ -700,8 +700,8 @@ function VM (options = {}) {
         },
         displayError ({ msg }, err) {
           let lines = globalContext.source.split(/\r\n?|\n/);
-          return err({ message: `${msg}\n${lines[globalContext.pos[0][0] - 1]}\n${"-".repeat(globalContext.pos[0][1] - 1)}${
-            "^".repeat(globalContext.pos[1][1] - globalContext.pos[0][1])} ${globalContext.pos.join("-")}` }) }
+          return err({ message: `${msg}\n${lines[globalContext.pos[0][0] - 1]}\n${"-\u200b".repeat(globalContext.pos[0][1] - 1)}${
+            "^\u200b".repeat(globalContext.pos[1][1] - globalContext.pos[0][1])} ${globalContext.pos.join("-")}` }) }
       })) this[k] = debug(["normalForm", "typecheck", "elaborate", "returnAll"].includes(k) ?
         function (...args) { phase = "evaluator"; return fn.apply(this, args) } : fn, k, this)  // TODO: trampoline
     }

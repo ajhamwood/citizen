@@ -121,10 +121,12 @@ section {
     display: flex;
     flex-flow: column nowrap;
     overflow: scroll }
+  menu::-webkit-scrollbar { display: none }
   #source, #highlight, #log {
     background: #233142;
     font-family: univers;
     font-variant-ligatures: none;
+    font-size: 12pt;
     flex: 1 0;
     padding: .5em }
   #source {
@@ -141,8 +143,6 @@ section {
   #highlight > * {
     font-family: univers;
     font-variant-ligatures: none;
-    word-break: break-word;
-    white-space: pre-wrap;
     line-height: 1em }
   #highlight > [data-label="ws"] { color: #d3dee9 }
   #highlight > [data-label="encl"] { color: #5e81ac }
@@ -154,13 +154,16 @@ section {
   #highlight > [data-label="lam"] { color: #88c0d0 }
   #highlight > [data-label="nameImpl"] { color: #8fbcbb }
   #highlight > [data-label="let"] { color: #b48ead }
-  #katRepl { position: relative }
-  #source::selection { background: #455d7a80 }
-  #log::selection { background: #455d7a }
-  #log {
-    overflow-y: auto;
+  #highlight::after { content: " " }
+  #katRepl {
+    position: relative;
     word-break: break-word;
     white-space: pre-wrap }
+  #source::selection { background: #455d7a80 }
+  #log::selection { background: #455d7a }
+  #log { 
+    word-break: break-all;
+    overflow-y: auto }
   hr {
     border: 0;
     height: 0;
@@ -173,7 +176,8 @@ section {
   #source {
     border-width: 0 1px 0 0;
     width: calc(50% - 1em);
-    height: calc(100% - 1em) } }
+    height: calc(100% - 1em);
+    resize: horizontal } }
 @media (max-aspect-ratio: 3/2) {
   section { flex-direction: column }
   svg { flex: 1 1 100vw }
@@ -183,7 +187,8 @@ section {
   #source {
     border-width: 0 0 1px 0;
     width: calc(100% - 1em);
-    height: calc(50% - 1em) } }
+    height: calc(50% - 1em);
+    resize: vertical } }
 @media (max-aspect-ratio: 3/2) and (min-height: 600px) {
   svg { order: 1 } }
 @media (max-aspect-ratio: 3/2) and (max-width: 675px) {

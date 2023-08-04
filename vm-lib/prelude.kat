@@ -1,34 +1,23 @@
-let Bit : U
-    = {B} -> B -> B -> B;
-let I : Bit
-    = \i o. i;
-let O : Bit
-    = \i o. o;
+-- Booleans
 
-let not : Bit -> Bit
-    = \b i o. b o i;
-let and : Bit -> Bit -> Bit
-    = \x y i o. x (y i o) (x i o);
-let or : Bit -> Bit -> Bit
-    = \x y i o. x (x i o) (y i o);
-let xor : Bit -> Bit -> Bit
-    = \x y i o. x (y o i) (y i o);
-let if : {R} -> Bit -> R -> R -> R
-    = \p a b. p a b;
-let carry : Bit -> Bit -> Bit -> Bit
-    = \a b c. or (and a b) (and c (xor a b));
-let sum : Bit -> Bit -> Bit -> Bit
-    = \a b c. xor (xor a b) c;
+let Bit : U                                           = (B : U) -> B -> B -> B;
+let I : Bit                                           = \B i o. i;
+let O : Bit                                           = \B i o. o;
 
-let Pair : {P} -> U -> U -> U
-    = \{P} A B. (A -> B -> P) -> P;
-let pair : {A B P} -> A -> B -> Pair {P} A B
-    = \a b p. p a b;
-let fst : {A B} -> Pair A B -> A
-    = \s. s (\a b. a);
-let snd : {A B} -> Pair A B -> B
-    = \s. s (\a b. b);
+let not : Bit -> Bit                                  = \b B i o. b B o i;
+let and : Bit -> Bit -> Bit                           = \x y B i o. x B (y B i o) (x B i o);
+let or : Bit -> Bit -> Bit                            = \x y B i o. x B (x B i o) (y B i o);
+let xor : Bit -> Bit -> Bit                           = \x y B i o. x B (y B o i) (y B i o);
+let carry : Bit -> Bit -> Bit -> Bit                  = \a b c. or (and a b) (and c (xor a b));
+let sum : Bit -> Bit -> Bit -> Bit                    = \a b c. xor (xor a b) c;
 
-let bitAdd : Bit -> Bit -> Bit -> Pair Bit Bit
-    = \a b c. pair (carry a b c) (sum a b c);
+
+-- Products
+
+let Pair : U -> U -> U                                = \A B. (P : U) -> (A -> B -> P) -> P;
+let pair : {A B : U} -> A -> B -> Pair A B            = \a b P p. p a b;
+let fst : {A B : U} -> Pair A B -> A                  = \{A} s. s A (\a b. a);
+let snd : {A B : U} -> Pair A B -> B                  = \{B=B} s. s B (\a b. b);
+
+let bitAdd : Bit -> Bit -> Bit -> Pair Bit Bit        = \a b c. pair {Bit}{Bit} (carry a b c) (sum a b c);
 bitAdd I O O

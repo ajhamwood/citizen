@@ -580,7 +580,7 @@ let cong : {A B}(f : A -> B){x y} -> Eq x y -> Eq (f x) (f y)
 
 
 let EquivNats : IsEquivalence {Nat} Eq
-    = \E. E refl (\{x}{y} pxy. _) (\{i}{j}{k} reljk relij. _);
+    = \E. E (refl {Nat}) (\{x}{y} pxy. _) (\{i}{j}{k} reljk relij. _);
 --tt (Symmetric (Eq {Nat})) (\{x}{y} pxy. x _ (\acc. acc) pxy)
 
 
@@ -611,3 +611,53 @@ tt (Eq (node (leaf I) (leaf I)) (node (leaf I) (leaf I))) refl
 let setBit : {n} -> Vec {n} Bit -> LTree {n} Bit -> Bit -> LTree {n} Bit
     = \{n} v tr b. tr (\n. LTree {n} Bit) (\b. leaf b) (\{m} l r. node l r);
 setBit (cons I nil) (initWord (ds dz))-}
+
+
+let foldnat : {A : Nat -> U}{n} -> ({m} -> A m -> A (suc m)) -> A zero -> Nat -> A n
+    = \{A} reducer base n. proj2 {Nat} (n (Sigma Nat A)
+        (\s. dpair {Nat}{A} (suc (proj1 s)) (reducer (proj2 s))) (dpair zero base));
+let fact : Nat -> Nat = \n. foldnat {\_. Nat} (\{m}. mul m) (suc zero) n;
+fact (suc (suc (suc zero)))
+
+-- first projection is in type, so cannot change during induction over a non-dependent type
+(suc (suc zero)) (Sigma Nat (\_. Nat))
+    (\acc. acc (\_. Sigma Nat (\_. Nat)) (\fst snd. dpair fst (suc snd)))
+    (dpair zero zero)
+
+-- Access a dependent nat from a computable plain nat
+(ds (ds dz)) (\n. DNat {n Nat (\acc N s z. s (s (acc N s z))) zero}) (\acc DN s z. s (s (acc DN s z))) dz
+
+
+
+let addSucZero : {n} -> Eq (add zero (suc n)) (suc (add zero n))
+    = refl;
+let addSucSuc : {k n} -> Eq (add k (suc n)) (suc (add k n)) -> Eq (add (suc k) (suc n)) (suc (add (suc k) n))
+    = cong suc;
+let addSuc : {m n} -> Eq (add m (suc n)) (suc (add m n))
+    = \{m}{n} P pt. m _ addSucSuc addSucZero;
+addSuc
+
+
+
+
+let cmExtend : {Sh1 Sh2}{cmS : Sh1 -> Sh2}{C1 : Container {Sh1}}{C2 : Container {Sh2}}{X} ->
+               CMorphism {Sh1}{Sh2}{cmS} C1 C2 -> cextend {Sh1} C1 X -> cextend {Sh2} C2 X
+    = \{Sh1}{Sh2}{cmS}{C1}{C2}{X} CM. smap {Sh1}{Sh2}{cposition C1}{cposition C2} (cmshape {Sh1}{Sh2}{C1}{C2} (CM {\sh1 sh2 _ _ _. Sh1 -> Sh2})) (comp (cmposition {cmS}{C1}{C2} CM));
+
+-- W types
+
+let W : {WSh}(C : Container {WSh}) -> U
+    = \{WSh} C. {w : {Sh} -> Container {Sh} -> U} ->
+        ({sh}{c : Container {sh}} -> (sup : cextend {sh} c (w {sh} c) -> w {sh} c) -> w {sh} c) -> w {WSh} C;
+let sup : {Sh}{C : Container {Sh}} -> (cextend {Sh} C (W {Sh} C) -> W {Sh} C) -> W {Sh} C
+    = \{Sh}{C} s {W} w. w {Sh}{C} s;
+let whead : {WSh}{C : Container {WSh}} -> W {WSh} C -> cshape C
+    = \{WSh}{C} w. w (\{sh}{c} sup. _);
+
+whead
+
+
+let mapM : {T}{trav : Trav T}{M}{monad : Monad M}{A B} -> (A -> M B) -> T A -> M (T B)
+    = \{T}{trav}{M}{monad}{A}{B} f as. trav {M}{B} (\traverse. traverse {M}{monadApp monad}{B}{A} f as);
+
+run {List Bit} (mapM {List}{listTrav}{Cont}{contMonad} (\b. cont (\k. k (not b))) (cons I (cons O nil))) (\x. x)

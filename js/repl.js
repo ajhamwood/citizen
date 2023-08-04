@@ -1,4 +1,5 @@
 var repl = new $.Machine({
+      isPortrait : null,
       TC: null, debounce: null, debounceTime: 500, selectEnd: null,
       history: { past: [], cur: { code: $("#source").value, highlight: localStorage.getItem("replHighlight") }, future: [] },
       syntaxLabels: [ "ws", "encl", "ident", "atom", "piBinder", "pi", "lamBinder", "lam", "nameImpl", "let" ]
@@ -6,6 +7,16 @@ var repl = new $.Machine({
 
 $.targets({
   repl: {
+    init () {
+      $("#source").style.height = getComputedStyle($("#source")).getPropertyValue("height");
+      $("#source").style.width = getComputedStyle($("#source")).getPropertyValue("width");
+      this.isPortrait = $("body").clientWidth / $("body").clientHeight > 3/2;
+      const resizeObs = new ResizeObserver(() => repl.emit('resize'));
+      resizeObs.observe($("#source"));
+      resizeObs.observe($("body"));
+      repl.emit("editorParse")
+    },
+
     // BUG: undo breaks highlighting
     // TODO: focus source -> show cursor line/column numbers in bottom right, select -> show range
     // TODO: select -> type "(" or "{" -> enclosure
@@ -204,6 +215,31 @@ $.targets({
     },
   
     select () { this.selectEnd = $("#source").selectionEnd },
-    deselect () { this.selectEnd = null }
+    deselect () { this.selectEnd = null },
+
+    resize () {
+      const isNowPortrait = $("body").clientWidth / $("body").clientHeight > 3/2;
+      if (this.isPortrait === isNowPortrait) {
+        let offset;
+        if (isNowPortrait) {
+          offset = $("#log").scrollHeight - $("#log").clientHeight - $("#log").scrollTop;
+          $("#highlight").style.flex = "0 1 " + $("#source").style.width;
+          $("#log").scrollTop = Math.max(0, $("#log").scrollHeight - $("#log").clientHeight - offset)
+        } else {
+          offset = $("#log").scrollHeight - $("#log").clientHeight - $("#log").scrollTop;
+          $("#highlight").style.flex = "0 1 " + $("#source").style.height;
+          $("#log").scrollTop = Math.max(0, $("#log").scrollHeight - $("#log").clientHeight - offset)
+        }
+      } else {
+        this.isPortrait = isNowPortrait;
+        $("#source").style.height = "";
+        $("#source").style.height = getComputedStyle($("#source")).getPropertyValue("height");
+        $("#source").style.width = "";
+        $("#source").style.width = getComputedStyle($("#source")).getPropertyValue("width");
+        $("#highlight").style.flex = ""
+        $("#highlight").style.flex = getComputedStyle($("#highlight")).getPropertyValue("flex");
+      }
+      $("#highlight").scrollTop = $("#source").scrollTop
+    }
   }
 })

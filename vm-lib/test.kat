@@ -36,10 +36,14 @@ let minus : Nat -> Nat -> Nat                         = \m n. n _ pred m;
 let diff : Nat -> Nat -> Nat                          = \m n. add (minus m n) (minus n m);
 
 
--- Equality
+-- Leibniz Equality
 
-let Eq : {T} -> T -> T -> U = \{T} x y. (P : T -> U) -> P x -> P y;
-let refl : {t} -> Eq t t = \P pt. pt;
+let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> P x -> P y;
+let refl : {T t} -> Eq {T} t t                        = \P pt. pt;
+let trans : {T}{x y z : T} -> Eq x y -> Eq y z -> Eq x z = \xy yz P px. yz P (xy P px);
+let sym : {T}{x y : T} -> Eq x y -> Eq {T} y x        = \{x=x} xy P. xy (\z. P z -> P x) (refl P);
+let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (\x. P (f x));
+let subst : {T}{x y : T}(P : T -> U) -> Eq x y -> P x -> P y = \P xy. xy P;
 
 -- Dependent Nats
 
@@ -104,18 +108,18 @@ let transitive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Transitive Rel 
 let IsEquivalence : {A} -> (A -> A -> U) -> U
     = \{A} Rel. {R} -> ((refl : Reflexive {A} Rel) -> (sym : Symmetric {A} Rel) ->
         (trans : Transitive {A} Rel) -> R) -> R;
-let isEquivalence : {A B}{Rel : A -> A -> U} ->
-                    (f : B -> A) -> IsEquivalence Rel -> IsEquivalence (on Rel f)
-    = \{Rel=Rel} f eq E. eq (\refl sym trans. E
+let isEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) -> IsEquivalence Rel -> IsEquivalence (on Rel f)
+    = \f Rel eq E. eq (\refl sym trans. E
         (reflexive f Rel refl) (symmetric f Rel sym) (transitive f Rel trans));
 
 let IsDecEquivalence : {A} -> (A -> A -> U) -> U
     = \{A} Rel. {R} -> ((DecRel : Decidable Rel) -> (isEquiv : IsEquivalence Rel) -> R) -> R;
 let decidable : {A B}(f : B -> A)(Rel : A -> A -> U) -> Decidable Rel -> Decidable (on Rel f)
     = \f _ dec x y. dec (f x) (f y);
-let isDecEquivalence : {A B}{Rel : A -> A -> U}(f : B -> A) ->
+let isDecEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) ->
                        IsDecEquivalence Rel -> IsDecEquivalence (on Rel f)
-    = \{Rel=Rel} f deq DE. deq (\DecRel isEquiv. DE (decidable f Rel DecRel) (isEquivalence {Rel=Rel} f isEquiv));
+    = \f Rel deq DE. deq (\DecRel isEquiv. DE (decidable f Rel DecRel) (isEquivalence f Rel isEquiv));
+
 
 let Setoid : U
     = {S} -> ((T : U) -> (Rel : T -> T -> U) -> (isEquiv : IsEquivalence Rel) -> S) -> S;
@@ -132,6 +136,9 @@ let proj1 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> A
     = \{A} s. s (\_. A) (\fst snd. fst);
 let proj2 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> B a
     = \{B=B} s. s B (\fst snd. snd);
+let smap : {A B}{P : A -> U}{Q : B -> U}(f : A -> B) ->
+           ({x} -> P x -> Q (f x)) -> Sigma A P -> Sigma B Q
+    =\{B=B}{Q=Q} f g s. s (\b. Sigma B Q) (\x y. dpair (f x) (g y));
 
 
 -- Words

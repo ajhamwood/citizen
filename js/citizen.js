@@ -31,10 +31,11 @@ var citizen = new $.Machine({ sims, addr: "citizen" }),
 
 $.targets({
   async load () {
+
     // initPeerWC();
     citizen.emit("init");
     
-    repl.emit("editorParse");
+    repl.emit("init");
 
     await chord.emitAsync("startTimer");
 
