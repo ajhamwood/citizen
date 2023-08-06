@@ -498,6 +498,11 @@ $.targets({
   }
 });
 
+// $.targets({ selectionchange () {
+//   const selection = getSelection();
+//   if (selection.anchorNode?.parentNode.id === "log" && !$("#log").contains(selection.focusNode)) selection.extend($("#log"))
+// } }, document);
+
 $.queries({
   body: { click (e) {
     const path = e.composedPath();
@@ -514,7 +519,12 @@ $.queries({
     select () { repl.emit("select") },
     "blur click" () { if (this.selectionStart === this.selectionEnd) repl.emit("deselect") },
     scroll () { $("#highlight").scrollTop = $("#source").scrollTop }
-  }
+  },
+  "#log": { "copy dragstart" (e) {
+    e[e.type === "copy" ? "clipboardData" : "dataTransfer"].setData("text/plain", document.getSelection().toString()
+      .replace(/\u200b|(→)|(λ)/g, ({}, $1, $2) => $1 ? "->" : $2 ? "\\" : ""));
+    e.type === "copy" && e.preventDefault()
+  } }
 });
 
 function initPeerWC () {

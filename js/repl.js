@@ -27,9 +27,9 @@ $.targets({
       this.debounce = setTimeout(async () => {  // disable/enable run
         let source = sourceEl.value, err;
         try {
-          const { highlight, normalForm } = await VM().import({ code: sourceEl.value });
+          const { highlight, returnAll } = await VM().import({ code: sourceEl.value });
           if (highlight.length !== source.length) throw new Error();
-          this.TC = normalForm;
+          this.TC = returnAll;
           localStorage.setItem("highlight", { code: sourceEl.value, highlight });
           this.history.cur.highlight = highlight;
           this.emit("updateHighlight", highlight)
@@ -181,10 +181,18 @@ $.targets({
   
     async editorRun (memory) {
       const log = $("#log");
-      let term, type, ctx, err;
-      try { ({ term, type, ctx } = await this.TC.run(memory)) } catch (e) { err = e.message }
+      let term, type, metas, ctx, err, stack;
+      try {
+        ({ term, type, metas, ctx } = await this.TC.run(memory));
+        tell.log.call(citizen, "Success; Metacontext:\n", ...metas.map(meta => meta.toString(ctx) + "\n"))
+      } catch (e) {
+        err = e.message; stack = e.stack;
+        tell.log.call(citizen, "Fail; Message:", e.message)
+      }
       log.childNodes.length && $.load("hr", "#log");
-      log.appendChild(document.createTextNode(err ? err :
+      log.appendChild(document.createTextNode(err ? err
+        .replace(/([\-\^\(\)\{\}\. ])(?=([\-\^\(\)\{\}\. ])?)/g,
+          function ({}, $1, $2) { return $2 ? "\u200b" + $1 : `\u200b${$1}\u200b` }) :
         ((...res) => res.join(/\r\n?|\n/g.test(res.join('')) ? '\n\n' : '\n'))("type: " + type.toString(ctx), "term: " + term.toString(ctx))));
       log.scroll(0, 1e6)
     },
@@ -228,6 +236,7 @@ $.targets({
         } else {
           offset = $("#log").scrollHeight - $("#log").clientHeight - $("#log").scrollTop;
           $("#highlight").style.flex = "0 1 " + $("#source").style.height;
+          $("#source").style.width = getComputedStyle($("#highlight")).getPropertyValue("width");
           $("#log").scrollTop = Math.max(0, $("#log").scrollHeight - $("#log").clientHeight - offset)
         }
       } else {

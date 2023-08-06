@@ -170,11 +170,14 @@ let undwrap : {T t} -> DWrap {T} t -> T               = \{V}{v} w. w (\_. V) (\_
 
 let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> P x -> P y;
 let refl : {T t} -> Eq {T} t t                        = \P pt. pt;
-let trans : {T}{x y z : T} -> Eq x y -> Eq y z -> Eq x z = \xy yz P px. yz P (xy P px);
+let trans : {T}{x y z : T} -> Eq y z -> Eq x y -> Eq {T} x z = \yz xy P px. yz P (xy P px);
 let sym : {T}{x y : T} -> Eq x y -> Eq {T} y x        = \{T}{x} xy P. xy (\z. P z -> P x) (refl {T} P);
 let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (\x. P (f x));
 let subst : {T}{x y : T}(P : T -> U) -> Eq x y -> P x -> P y = \P xy. xy P;
 
+let EqIsEquiv : {T} -> IsEquivalence {T} Eq           = \E. E refl sym trans;
+let EqSetoid : {T} -> Setoid {T}                      = \S. S Eq (\E. E refl sym trans);
+-- EqSetoid {Nat} (\Rel isEquiv. isEquiv (\refl sym trans. refl))
 
 -- Dependent Nats
 
@@ -335,6 +338,11 @@ let Implies : {A B} -> (A -> B -> U) -> (A -> B -> U) -> U
 let Preserves : {A B} -> (A -> B) -> (A -> A -> U) -> (B -> B -> U) -> U
     = \f P Q. {x y} -> P x y -> Q (f x) (f y);
 
+let Respects : {A B} -> (A -> U) -> (B -> U) -> (A -> B -> U) -> U
+    = \P Q Rel. {x y} -> Rel x y -> P x -> Q y;
+let Substitutive : {A} -> (A -> A -> U) -> U
+    = \{A} Rel. (P : A -> U) -> Respects P P Rel;
+
 let Reflexive : {A} -> (A -> A -> U) -> U             = \Rel. {x} -> Rel x x;
 let reflexive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Reflexive Rel -> Reflexive (on Rel f)
     = \_ _ refl. refl;
@@ -348,25 +356,27 @@ let transitive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Transitive Rel 
     = \_ _ trans. trans;
 
 let IsEquivalence : {A} -> (A -> A -> U) -> U
-    = \{A} Rel. {R} -> ((refl : Reflexive {A} Rel) -> (sym : Symmetric {A} Rel) ->
-        (trans : Transitive {A} Rel) -> R) -> R;
+    = \{A} Rel. {E} -> ((refl : Reflexive {A} Rel)
+        (sym : Symmetric {A} Rel)(trans : Transitive {A} Rel) -> E) -> E;
 let isEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) -> IsEquivalence Rel -> IsEquivalence (on Rel f)
     = \f Rel eq E. eq (\refl sym trans. E
         (reflexive f Rel refl) (symmetric f Rel sym) (transitive f Rel trans));
 
 
 let IsDecEquivalence : {A} -> (A -> A -> U) -> U
-    = \{A} Rel. {R} -> ((DecRel : Decidable Rel) -> (isEquiv : IsEquivalence Rel) -> R) -> R;
+    = \{A} Rel. {D} -> ((DecRel : Decidable {A}{A} Rel)(isEquiv : IsEquivalence {A} Rel) -> D) -> D;
 let decidable : {A B}(f : B -> A)(Rel : A -> A -> U) -> Decidable Rel -> Decidable (on Rel f)
     = \f _ dec x y. dec (f x) (f y);
 let isDecEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) ->
                        IsDecEquivalence Rel -> IsDecEquivalence (on Rel f)
     = \f Rel deq DE. deq (\DecRel isEquiv. DE (decidable f Rel DecRel) (isEquivalence f Rel isEquiv));
 
-let Setoid : U
-    = {S} -> ((T : U) -> (Rel : T -> T -> U) -> (isEquiv : IsEquivalence Rel) -> S) -> S;
-let DecSetoid : U
-    = {S} -> ((T : U) -> (Rel : T -> T -> U) -> (isDecEquiv : IsDecEquivalence Rel) -> S) -> S;
+let Setoid : {A}{Rel : A -> A -> U} -> U
+    = \{Rel=Rel}. {S : {T} -> (T -> T -> U) -> U} -> ({T}(rel : T -> T -> U)
+        (isEquiv : IsEquivalence {T} rel) -> S rel) -> S Rel;
+let DecSetoid : {A}{Rel : A -> A -> U} -> U
+    = \{Rel=Rel}. {D : {T} -> (T -> T -> U) -> U} -> ({T}(rel : T -> T -> U)
+        (isDecEquiv : IsDecEquivalence {T} rel) -> D rel) -> D Rel;
 
 
 -- Monoid

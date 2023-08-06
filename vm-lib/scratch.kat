@@ -37,15 +37,6 @@ let diff : Nat -> Nat -> Nat                          = \m n. add (minus m n) (m
 
 
 
--- Leibniz Equality
-
-let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> P x -> P y;
-let refl : {T t} -> Eq {T} t t                        = \P pt. pt;
-let trans : {T}{x y z : T} -> Eq x y -> Eq y z -> Eq x z = \xy yz P px. yz P (xy P px);
-let sym : {T}{x y : T} -> Eq x y -> Eq {T} y x        = \{x=x} xy P. xy (\z. P z -> P x) (refl P);
-let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (\x. P (f x));
-let subst : {T}{x y : T}(P : T -> U) -> Eq x y -> P x -> P y = \P xy. xy P;
-
 -- Dependent Nats
 
 let DNat : {n} -> U
@@ -106,13 +97,13 @@ let symmetric : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Symmetric Rel ->
 let Transitive : {A} -> (A -> A -> U) -> U            = \Rel. {i j k} -> Rel j k -> Rel i j -> Rel i k;
 let transitive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Transitive Rel -> Transitive (on Rel f)
     = \_ _ trans. trans;
+
 let IsEquivalence : {A} -> (A -> A -> U) -> U
     = \{A} Rel. {R} -> ((refl : Reflexive {A} Rel) -> (sym : Symmetric {A} Rel) ->
         (trans : Transitive {A} Rel) -> R) -> R;
 let isEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) -> IsEquivalence Rel -> IsEquivalence (on Rel f)
     = \f Rel eq E. eq (\refl sym trans. E
         (reflexive f Rel refl) (symmetric f Rel sym) (transitive f Rel trans));
-
 let IsDecEquivalence : {A} -> (A -> A -> U) -> U
     = \{A} Rel. {R} -> ((DecRel : Decidable Rel) -> (isEquiv : IsEquivalence Rel) -> R) -> R;
 let decidable : {A B}(f : B -> A)(Rel : A -> A -> U) -> Decidable Rel -> Decidable (on Rel f)
@@ -121,11 +112,21 @@ let isDecEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) ->
                        IsDecEquivalence Rel -> IsDecEquivalence (on Rel f)
     = \f Rel deq DE. deq (\DecRel isEquiv. DE (decidable f Rel DecRel) (isEquivalence f Rel isEquiv));
 
-
 let Setoid : U
     = {S} -> ((T : U) -> (Rel : T -> T -> U) -> (isEquiv : IsEquivalence Rel) -> S) -> S;
 let DecSetoid : U
     = {S} -> ((T : U) -> (Rel : T -> T -> U) -> (isDecEquiv : IsDecEquivalence Rel) -> S) -> S;
+
+-- Leibniz Equality
+
+let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> P x -> P y;
+let refl : {T t} -> Eq {T} t t                        = \P pt. pt;
+let trans : {T}{x y z : T} -> Eq y z -> Eq x y -> Eq {T} x z = \yz xy P px. yz P (xy P px);
+let sym : {T}{x y : T} -> Eq x y -> Eq {T} y x        = \{x=x} xy P. xy (\z. P z -> P x) (refl P);
+let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (\x. P (f x));
+let subst : {T}{x y : T}(P : T -> U) -> Eq x y -> P x -> P y = \P xy. xy P;
+
+let EqSetoid : Setoid                                 = \{T} S. S {T} Eq (\E. E refl sym trans);
 
 -- Dependent Sums
 

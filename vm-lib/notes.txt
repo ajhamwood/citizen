@@ -657,7 +657,65 @@ let whead : {WSh}{C : Container {WSh}} -> W {WSh} C -> cshape C
 whead
 
 
+
+\{Sh}{X}{Y}(C : Container {Sh})(Rel : X -> Y -> U)(cx : cextend {Sh} C X)(cy : cextend {Sh} C Y)(shape : Eq {Sh} (proj1 {Sh} cx) (proj1 {Sh} cy)){px}.
+    (proj2 {Sh} cy (subst {Sh} (cposition {Sh} C) shape px))
+
+{-
+let Pointwise : {Sh X Y}(C : Container {Sh})(Rel : X -> Y -> U)
+                (cx : cextend {Sh} C X)(cy : cextend {Sh} C Y) -> U
+    = \{Sh} C Rel cx cy. {P} -> ((shape : Eq {Sh} (proj1 {Sh} cx) (proj1 {Sh} cy)) ->
+        (position : {px} -> Rel (proj2 {Sh} cx px) (proj2 {Sh} cy (subst {Sh} (cposition {Sh} C) shape px))) -> P) -> P;
+
+Pointwise
+-}
+
+
+
 let mapM : {T}{trav : Trav T}{M}{monad : Monad M}{A B} -> (A -> M B) -> T A -> M (T B)
     = \{T}{trav}{M}{monad}{A}{B} f as. trav {M}{B} (\traverse. traverse {M}{monadApp monad}{B}{A} f as);
 
 run {List Bit} (mapM {List}{listTrav}{Cont}{contMonad} (\b. cont (\k. k (not b))) (cons I (cons O nil))) (\x. x)
+
+
+
+let IndexedReflexive : {I i1 i2}{A : I -> U} -> (A i1 -> A i2 -> U) -> U =
+    \Rel. {x} -> Rel x x;
+let IndexedSymmetric : {I i1 i2}{A : I -> U} -> (A i1 -> A i2 -> U) -> U = Symmetric;
+let IndexedTransitive : {I i1 i2}{A : I -> U} -> (A i1 -> A i2 -> U) -> U = Transitive;
+let IsIndexedEquivalence : {I i1 i2}{A : I -> U} -> (A i1 -> A i2 -> U) -> U
+    = \{A=A} Rel. {E} -> ((refl : IndexedReflexive {A=A} Rel)
+        (sym : IndexedSymmetric {A=A} Rel)(trans : IndexedTransitive {A=A} Rel) -> E) -> E;
+let IndexedSetoid : {A}{Rel : A -> A -> U} -> U -> U
+    = \{Rel=Rel} I. {IS : {T : I -> U} -> (T -> T -> U) -> U} -> ({T}(rel : T -> T -> U)
+        (isEquiv : IsIndexedEquivalence {T} rel) -> IS rel) -> IS Rel;
+let EqPreservingFunction : (From : Setoid) -> IndexedSetoid (carrier From) -> U
+    = \From To. _;
+EqPreservingFunction
+
+
+
+
+let mapM : {T : U -> U}{trav : Trav T}{M}{monad : Monad M}{A B} -> (A -> M B) -> T A -> M (T B)
+    = \{T}{trav}{M}{monad}{A}{B} f as. trav {M}{B} (\traverse. traverse {M}{monadApp monad}{B}{A} f as);
+
+--run {List Bit} (mapM {List}{listTrav}{Cont Bit}{contMonad}{Bit}{Bit} (\b. cont (\k. k (not b))) (cons I (cons O nil))) (\x. x)
+
+mapM {List}{listTrav}{Cont Bit}{contMonad}{Bit}{Bit} (\b. cont (\k. k (not b))) (cons I (cons O nil))
+
+
+
+
+let Trav : (F : U -> U){T} -> U
+    = \F {T}. {S : U -> U} -> ({G : U -> U}{B}(traverse : {app : App G}{A} -> (A -> G B) -> F A -> G (F B)) -> F B) -> F T;
+
+let listTrav : {T} -> Trav List {T}
+    = \{T}{S} Tr. Tr {S}{T} (\{app} f la. app {List T} (\pure ap. la (S (List T)) (pure nil) (\a as. ap (ap (pure cons) (f a)) as)));
+
+
+--let mapM : {F A} -> Trav F {A} -> U = _;
+let mapM : {F : U -> U}{A}{trav : Trav F {A}}{M}{monad : Monad M}{B} -> (A -> M B) -> F A -> M (F B)
+    = \{F}{A}{trav}{M}{monad}{B} f as. trav {M} (\{G}{X} traverse. traverse {monadApp {G} (monad {X})} f as);
+--    = \{F}{A}{trav}{M}{monad} f as. trav {M} (\traverse. traverse {monadApp monad}{A} f as);
+
+mapM {listTrav}

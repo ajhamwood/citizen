@@ -164,7 +164,7 @@ function VM (options = {}) {
       .then(st => loop(st, res.concat([st.data])))
       .catch(({ fail }, err) => (zero || res.length) && fail[0] === "_" ?
         ({ ...s, data: res }) : err({ ...s, fail }))) => loop(state, []))() }
-    static scan (pred, msg) { return state => Parser.many(s1 => Parser.any(s1).then((s2, err) => 
+    static scan (pred) { return state => Parser.many(s1 => Parser.any(s1).then((s2, err) => 
       !pred(s2) ? s2 : err({ ...s2, fail: "_" })))(state)  // Use symbol?
       .catch((s3, err) => s3.fail === "_" ? err(s3) : s3) }
     static guard (p, pred, msg) { return state => p(state)
@@ -668,40 +668,36 @@ function VM (options = {}) {
           return Result.pure({ ctx, vtype, term: this.freshMeta({ ctx, vtype }).meta }) }
         }, { decorate: ({ rterm }) => globalContext.pos = rterm.pos, scrut: [ "rterm" ] }),
 
-        doElab ({ rterm }) {
+        doElab ({ data: rterm }) {
           this.reset();
           return this.infer({ ctx: { env: [], names: new Map(), path: [], prun: [], lvl: 0 }, rterm })
             .then(({ ctx, ...res }) => this.checkEverything().then(() => ({ ctx, ...res })))
             .catch(this.displayError) },
-        normalForm ({ data: rterm }) {
+        normalForm ({ ctx, term, vtype }) {
           debug.log()("Expression normal form:");
-          return this.doElab({ rterm })
-            .then(({ ctx, term, vtype }) => ({ ctx,
-              term: this.quote({ ctx, lvl: 0, val: this.eval({ ctx, term, env: [] }) }),
-              type: this.quote({ ctx, lvl: 0, val: vtype }) })) },
-        typecheck ({ data: rterm }) {
+          return ({ ctx,
+            term: this.quote({ ctx, lvl: 0, val: this.eval({ ctx, term, env: [] }) }),
+            type: this.quote({ ctx, lvl: 0, val: vtype }) }) },
+        typecheck ({ ctx, vtype }) {
           debug.log()("Expression type:");
-          return this.doElab({ rterm })
-            .then(({ ctx, vtype }) => ({ ctx, type: this.quote({ ctx, lvl: 0, val: vtype }) })) },
-        elaborate ({ data: rterm }) {
+          return ({ ctx, type: this.quote({ ctx, lvl: 0, val: vtype }) }) },
+        elaborate ({ ctx, term }) {
           debug.log()("Elaborate expression:");
-          return this.doElab({ rterm })
-            .then(({ ctx, term }) => ({ ctx, term, metas: Array.from(globalContext.metas).map(([ mvar, { vtype, val } ]) =>
-              new MetaEntry({ mvar, solnTy: this.quote({ ctx, lvl: 0, val: vtype }), solnTm: typeof val === "undefined" ? null : this.quote({ ctx, lvl: 0, val }) })) })) },
-        returnAll ({ data: rterm }) {
+          return ({ ctx, term, metas: Array.from(globalContext.metas).map(([ mvar, { vtype, val } ]) =>
+              new MetaEntry({ mvar, solnTy: this.quote({ ctx, lvl: 0, val: vtype }), solnTm: typeof val === "undefined" ? null : this.quote({ ctx, lvl: 0, val }) })) }) },
+        returnAll ({ ctx, term, vtype }) {
           debug.log()("Full expression data:");
-          return this.doElab({ rterm })
-            .then(({ ctx, term, vtype }) => new Return ({ ctx,
+          return new Return ({ ctx,
               term: this.quote({ ctx, lvl: 0, val: this.eval({ ctx, term, env: [] }) }),
               type: this.quote({ ctx, lvl: 0, val: vtype }),
               elab: term,
               metas: Array.from(globalContext.metas).map(([ mvar, { vtype, val } ]) =>
-              new MetaEntry({ mvar, solnTy: this.quote({ ctx, lvl: 0, val: vtype }), solnTm: typeof val === "undefined" ? null : this.quote({ ctx, lvl: 0, val }) })) }))
+              new MetaEntry({ mvar, solnTy: this.quote({ ctx, lvl: 0, val: vtype }), solnTm: typeof val === "undefined" ? null : this.quote({ ctx, lvl: 0, val }) })) })
         },
         displayError ({ msg }, err) {
           let lines = globalContext.source.split(/\r\n?|\n/);
-          return err({ message: `${msg}\n${lines[globalContext.pos[0][0] - 1]}\n${"-\u200b".repeat(globalContext.pos[0][1] - 1)}${
-            "^\u200b".repeat(globalContext.pos[1][1] - globalContext.pos[0][1])} ${globalContext.pos.join("-")}` }) }
+          return err({ message: `${msg}\n${lines[globalContext.pos[0][0] - 1]}\n${"-".repeat(globalContext.pos[0][1] - 1)}${
+            "^".repeat(globalContext.pos[1][1] - globalContext.pos[0][1])} ${globalContext.pos.join("-")}` }) }
       })) this[k] = debug(["normalForm", "typecheck", "elaborate", "returnAll"].includes(k) ?
         function (...args) { phase = "evaluator"; return fn.apply(this, args) } : fn, k, this)  // TODO: trampoline
     }
@@ -729,14 +725,19 @@ function VM (options = {}) {
         else if ("path" in opt) fetch(opt.path, { cache: "no-cache" }).then(rsp => rsp.text()).then(ok).catch(err);
         else err({ message: "Load error: import option must be either 'code' or 'path'" })
       })).then(src => {
-        const parsed = parseVMCode(src);
-        return {
+        let elabResult;
+        const parsed = parseVMCode(src), cache = fname => parsed
+                .then((data, err) => elabResult?.resolve ?? (elabResult?.reject && err(elabResult.reject)) ??
+                  evaluateVMProgram.doElab(data).then(state => (elabResult = { resolve: state }, state)))
+                .then(evaluateVMProgram[fname])
+                .catch((state, err) => (elabResult = { reject: state }, err(state))).toPromise();
+        return ({
           highlight: globalContext.highlight.labelling,
-          normalForm: { run: memory => parsed.then(evaluateVMProgram.normalForm).toPromise() },
-          typecheck: { run: memory => parsed.then(evaluateVMProgram.typecheck).toPromise() },
-          elaborate: { run: memory => parsed.then(evaluateVMProgram.elaborate).toPromise() },
-          returnAll: { run: memory => parsed.then(evaluateVMProgram.returnAll).toPromise() }
-        }
+          normalForm: { run: memory => cache("normalForm") },
+          typecheck: { run: memory => cache("typecheck") },
+          elaborate: { run: memory => cache("elaborate") },
+          returnAll: { run: memory => cache("returnAll") },
+        })
       })
     } }
   })

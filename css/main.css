@@ -39,7 +39,7 @@
 * { font-family: literata }
 body {
   margin: 0;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-flow: column nowrap;
@@ -127,6 +127,7 @@ section {
     font-family: univers;
     font-variant-ligatures: none;
     font-size: 12pt;
+    line-height: 15pt;
     flex: 1 0;
     padding: .5em }
   #source {
@@ -160,6 +161,7 @@ section {
     word-break: break-word;
     white-space: pre-wrap }
   #source::selection { background: #455d7a80 }
+  /*#highlight *::selection { background: transparent }*/
   #log::selection { background: #455d7a }
   #log { 
     word-break: break-all;
