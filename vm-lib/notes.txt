@@ -642,8 +642,10 @@ addSuc
 
 let cmExtend : {Sh1 Sh2}{cmS : Sh1 -> Sh2}{C1 : Container {Sh1}}{C2 : Container {Sh2}}{X} ->
                CMorphism {Sh1}{Sh2}{cmS} C1 C2 -> cextend {Sh1} C1 X -> cextend {Sh2} C2 X
-    = \{Sh1}{Sh2}{cmS}{C1}{C2}{X} CM. smap {Sh1}{Sh2}{cposition C1}{cposition C2} (cmshape {Sh1}{Sh2}{C1}{C2} (CM {\sh1 sh2 _ _ _. Sh1 -> Sh2})) (comp (cmposition {cmS}{C1}{C2} CM));
-
+    = \{Sh1}{Sh2}{cmS}{C1}{C2}{X} CM.
+        smap {Sh1}{Sh2}{cposition C1}{cposition C2}
+            (cmshape {Sh1}{Sh2}{C1}{C2} (CM))
+            (comp (cmposition {cmS}{C1}{C2} CM));
 -- W types
 
 let W : {WSh}(C : Container {WSh}) -> U
@@ -672,13 +674,6 @@ Pointwise
 
 
 
-let mapM : {T}{trav : Trav T}{M}{monad : Monad M}{A B} -> (A -> M B) -> T A -> M (T B)
-    = \{T}{trav}{M}{monad}{A}{B} f as. trav {M}{B} (\traverse. traverse {M}{monadApp monad}{B}{A} f as);
-
-run {List Bit} (mapM {List}{listTrav}{Cont}{contMonad} (\b. cont (\k. k (not b))) (cons I (cons O nil))) (\x. x)
-
-
-
 let IndexedReflexive : {I i1 i2}{A : I -> U} -> (A i1 -> A i2 -> U) -> U =
     \Rel. {x} -> Rel x x;
 let IndexedSymmetric : {I i1 i2}{A : I -> U} -> (A i1 -> A i2 -> U) -> U = Symmetric;
@@ -696,26 +691,26 @@ EqPreservingFunction
 
 
 
-let mapM : {T : U -> U}{trav : Trav T}{M}{monad : Monad M}{A B} -> (A -> M B) -> T A -> M (T B)
-    = \{T}{trav}{M}{monad}{A}{B} f as. trav {M}{B} (\traverse. traverse {M}{monadApp monad}{B}{A} f as);
+-- Traversables
 
---run {List Bit} (mapM {List}{listTrav}{Cont Bit}{contMonad}{Bit}{Bit} (\b. cont (\k. k (not b))) (cons I (cons O nil))) (\x. x)
+let Trav : (F : U -> U) -> U
+    = \F. (S : U -> U){T} -> ((traverse : {G : U -> U}{app : App G}{B A} -> (A -> G B) -> F A -> G (F B)) -> S (F T)) -> S (F T);
+--let ltreeTrav : {n} -> Trav (LTree {n})
+--    = \_ T. T (\{F}{app}{B} f ta. app (\pure ap. ta (\n. F (LTree {n} B))
+--        (\a. ap (pure leaf) (f a)) (\{m} l r. ap (ap (pure node) l) r)));
 
-mapM {List}{listTrav}{Cont Bit}{contMonad}{Bit}{Bit} (\b. cont (\k. k (not b))) (cons I (cons O nil))
-
-
-
-
-let Trav : (F : U -> U){T} -> U
-    = \F {T}. {S : U -> U} -> ({G : U -> U}{B}(traverse : {app : App G}{A} -> (A -> G B) -> F A -> G (F B)) -> F B) -> F T;
-
-let listTrav : {T} -> Trav List {T}
-    = \{T}{S} Tr. Tr {S}{T} (\{app} f la. app {List T} (\pure ap. la (S (List T)) (pure nil) (\a as. ap (ap (pure cons) (f a)) as)));
+let vecTrav : {n} -> Trav (Vec {n})
+    = \{n} _ T. T (\{F}{app}{B} f va. app {Vec {n} B} (\pure ap. va (\n. F (Vec {n} B))
+        (pure nil) (\{m} a as. ap (ap (pure cons) (f a)) as)));
+let maybeNonzero : Nat -> Maybe Nat = \n. n (Maybe Nat) (\s. just n) nothing;
+--vecTrav Maybe (\traverse. traverse {app=maybeApp} maybeNonzero (cons (suc zero) nil))
 
 
---let mapM : {F A} -> Trav F {A} -> U = _;
-let mapM : {F : U -> U}{A}{trav : Trav F {A}}{M}{monad : Monad M}{B} -> (A -> M B) -> F A -> M (F B)
-    = \{F}{A}{trav}{M}{monad}{B} f as. trav {M} (\{G}{X} traverse. traverse {monadApp {G} (monad {X})} f as);
---    = \{F}{A}{trav}{M}{monad} f as. trav {M} (\traverse. traverse {monadApp monad}{A} f as);
+let Zipper : (F : U -> U)(A : U) -> U
+    = \F A. (Z : (U -> U) -> U -> U) -> ({G : U -> U}{B} -> G B -> Z G B) ->
+      ({G : U -> U}{B} -> B -> (Maybe B -> Z G B) -> Z G B) -> Z F A;
+let makeZipper : {F : U -> U}{trav : Trav F}{A} -> F A -> Zipper F A
+    = \{F}{trav}{A} fa Z zdone zstep. trav (Cont A) (\traverse. run
+        (traverse {app=contApp} (\a. cont (\k. zstep a (dcomp k (maybe a id)))) fa) zdone);
 
-mapM {listTrav}
+makeZipper

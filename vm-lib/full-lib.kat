@@ -122,14 +122,14 @@ let snd : {A B} -> Pair A B -> B                      = \{B=B} s. s B (\a b. b);
 let Maybe : U -> U                                    = \A. (M : U) -> M -> (A -> M) -> M;
 let nothing : {A} -> Maybe A                          = \M n j. n;
 let just : {A} -> A -> Maybe A                        = \a M n j. j a;
-
+let maybe : {B A} -> B -> (A -> B) -> Maybe A -> B    = \{B} b f ma. ma B b f;
 
 -- Either
 
 let Either : U -> U -> U                              = \A B. (E : U) -> (A -> E) -> (B -> E) -> E;
 let left : {A B} -> A -> Either A B                   = \a E l r. l a;
 let right : {A B} -> B -> Either A B                  = \b E l r. r b;
-
+let either : {C A B} -> (A -> C) -> (B -> C) -> Either A B -> C = \{C} f g eab. eab C f g;
 
 -- Lists
 
@@ -137,7 +137,14 @@ let List : U -> U                                     = \A. (L : U) -> L -> (A -
 let nil  : {A} -> List A                              = \L n c. n;
 let cons : {A} -> A -> List A -> List A               = \a as L n c. c a (as L n c);
 let concat : {A} -> List A -> List A -> List A        = \{A} la lb. la (List A) lb cons;
+let length : {A} -> List A -> Nat                     = \l. l Nat zero (\_. suc);
 
+let listHead : {A} -> List A -> A = \{A} l. l A _ (\a as. a);
+let listTail : {A} -> List A -> List A
+    = \{A} l. snd (l (Pair (List A) (List A)) (pair nil nil)
+        (\a acc. pair (cons a (fst acc)) (fst acc)));
+let listLookup : {A}(l : List A) -> Fin {length l} -> A
+    = \{A} l fn. listHead (fn (\n. List A) (\acc. listTail acc) l);
 
 -- Non-empty list
 
@@ -216,11 +223,11 @@ let foldfin : {A : Nat -> U}{n} ->
 
 let Vec : {n} -> U -> U
     = \{n} A. (V : Nat -> U) -> V zero -> ({m} -> A -> V m -> V (suc m)) -> V n;
-let nil : {A} -> Vec {zero} A                         = \V n c. n;
-let cons : {A n} -> A -> Vec {n} A -> Vec {suc n} A   = \a as V n c. c a (as V n c);
+let vnil : {A} -> Vec {zero} A                        = \V n c. n;
+let vcons : {A n} -> A -> Vec {n} A -> Vec {suc n} A  = \a as V n c. c a (as V n c);
 let head : {A n} -> Vec {suc n} A -> A                = \{A} v. v (\_. A) _ (\x xs. x);
 let tail : {A n} -> Vec {suc n} A -> Vec {n} A        = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
--- tail (cons I (cons O nil))
+-- tail (vcons I (vcons O vnil))
 
 let foldvec : {A}{B : Nat -> U}{n} ->
               ({m} -> A -> B m -> B (suc m)) -> B zero -> Vec {n} A -> B n
@@ -228,21 +235,21 @@ let foldvec : {A}{B : Nat -> U}{n} ->
         (\{m} a s. dpair (suc m) (reducer {m} a (proj2 s))));
 {-foldvec {Bit}{\n. Fin {suc n}}
     (\{m} b fn. b (Fin {suc (suc m)}) (fs fn) (fn (\n. Fin {suc n}) fs fz))
-    fz (cons I (cons O nil))-}
+    fz (vcons I (vcons O vnil))-}
 
 let lookupVec : {A m} -> Fin {m} -> Vec {m} A -> A
-    = \{A} fn v. (\k. v (\_. A) _ (\{n} a acc. (add (minus k n) (minus n k)) A (\_. acc) a))
+    = \{A} fn v. (\k. v (\_. A) _ (\{n} a acc. (diff n k) A (\_. acc) a))
         (fn (\_. Nat) suc zero);
 let lookup : {A m} -> Nat -> Vec {m} A -> A
-    = \{A} n v. v (\_. A) _ (\{m} a acc. (add (minus m n) (minus n m)) A (\_. acc) a);
---lookup {Bit} (fs fz) (cons I (cons O nil))
+    = \{A} n v. v (\_. A) _ (\{m} a acc. (diff n m) A (\_. acc) a);
+--lookup {Bit} (fs fz) (vcons I (vcons O vnil))
 
 let updateVec : {A m} -> Fin {m} -> Vec {m} A -> A -> Vec {m} A
-    = \{A} fn v newA. (\k. v (\n. Vec {n} A) nil (\{m} a as. cons ((diff m k) A (\_. newA) a) as))
+    = \{A} fn v newA. (\k. v (\n. Vec {n} A) vnil (\{m} a as. vcons ((diff m k) A (\_. newA) a) as))
         (fn (\_. Nat) suc zero);
 let update : {A m} -> Nat -> Vec {m} A -> A -> Vec {m} A
-    = \{A}{n} n v newA. v (\n. Vec {n} A) nil (\{m} a as. cons ((diff m n) A (\_. newA) a) as);
-updateVec (suc zero) (cons I (cons I nil)) O
+    = \{A}{n} n v newA. v (\n. Vec {n} A) vnil (\{m} a as. vcons ((diff m n) A (\_. newA) a) as);
+updateVec (suc zero) (vcons I (vcons I vnil)) O
 
 let cmpBitVec : {n} -> Vec {n} Bit -> Vec {n} Bit -> Bit
     = \{n} v1 v2. v1 (\_. Bit) I (\{m} a acc. and acc (xnor a (lookup {m=n} m v2)));
@@ -269,7 +276,7 @@ let foldltree : {A}{B : Nat -> U}{n} ->
 
 let lookupTree : {A n} -> Vec {n} Bit -> LTree {n} A -> A
     = \{A}{n} v tr. tr (\_. A) id (\{m} l r. (lookup {m=n} m v) _ r l);
---lookupTree {Bit} (cons I (cons O nil)) (node (node (leaf I) (leaf I)) (node (leaf O) (leaf I)))
+--lookupTree {Bit} (vcons I (vcons O vnil)) (node (node (leaf I) (leaf I)) (node (leaf O) (leaf I)))
 
 
 -- Bush
@@ -410,9 +417,11 @@ let App : (U -> U) -> U
 
 let maybeApp : App Maybe
     = \A. A just (\mf ma M n j. mf M n (\f. ma M n (\x. j (f x))));
+let contApp : {W} -> App (Cont W)
+    = \A. A (\x. cont (\k. k x)) (\cf ca. cont (\k. run ca (\v. run cf (\f. k (f v)))));
 
 let appFunctor : {F} -> App F -> Functor F
-    = \app F. F (\{A}{B} fn fa. app (\pure ap. ap {A}{B} (pure fn) fa));
+    = \app F. app (\pure ap. F (\{A}{B} fn fa. ap {A}{B} (pure fn) fa));
 let listApp : App List
     = \A. A (\x. cons x nil) (\fs xs. fs _ nil (\f bs. concat (listFunctor (\map. map f xs)) bs));
 -- listApp (\pure ap. ap (cons not (cons (\x. x) nil)) (cons O (cons I nil)))
@@ -437,8 +446,7 @@ let contMonad : {W} -> Monad (Cont W)
     = \F. F (\x. cont (\k. k x)) (\m f. cont (\k. run m (\v. run (f v) k)));
 
 let monadApp : {F} -> Monad F -> App F
-    = \monad A. A (\x. monad (\return bind. return x))
-        (\fs xs. monad (\return bind. bind fs (\f. bind xs (\x. return (f x)))));
+    = \monad A. monad (\return bind. A return (\fs xs. bind fs (\f. bind xs (\x. return (f x)))));
 
 let mapM : {A B}{M : U -> U}{monad : Monad M} -> (A -> M B) -> List A -> M (List B)
     = (\{A}{B}{M}{monad} f as. monad
@@ -450,23 +458,33 @@ let mapM : {A B}{M : U -> U}{monad : Monad M} -> (A -> M B) -> List A -> M (List
 -- Traversables
 
 let Trav : (F : U -> U) -> U
-    = \F. {S : U -> U}{T} -> ((traverse : {G : U -> U}{app : App G}{B A} -> (A -> G B) -> F A -> G (F B)) -> S (F T)) -> S (F T);
-
+    = \F. (S : U -> U){T} -> ((traverse : {G : U -> U}{app : App G}{B A} -> (A -> G B) -> F A -> G (F B)) -> S (F T)) -> S (F T);
 let maybeTrav : Trav Maybe
     = \T. T (\{app=app} f ma. app (\pure ap. ma _ (pure nothing) (\a. ap (pure just) (f a))));
 let listOfNonzero : Nat -> List Nat = \n. n (List Nat) (\s. cons n nil) nil;
---maybeTrav {List} (\traverse. traverse {app=listApp} listOfNonzero (just (suc zero)))
+--maybeTrav List (\traverse. traverse {app=listApp} listOfNonzero (just (suc zero)))
 
 let listTrav : Trav List
-    = \T. T (\{app=app} f la. app (\pure ap. la _ (pure nil) (\a as. ap (ap (pure cons) (f a)) as)));
+    = \_ T. T (\{G}{app}{B} f la. app {List B} (\pure ap. la (G (List B)) (pure nil) (\a as. ap (ap (pure cons) (f a)) as)));
 let maybeNonzero : Nat -> Maybe Nat = \n. n (Maybe Nat) (\s. just n) nothing;
---listTrav {Maybe} (\traverse. traverse {app=maybeApp} maybeNonzero (cons (suc zero) nil))
+--listTrav Maybe (\traverse. traverse {app=maybeApp} maybeNonzero (cons (suc zero) nil))
+
+let vecTrav : {n} -> Trav (Vec {n})
+    = \{n} _ T. T (\{F}{app}{B} f va. app {Vec {n} B} (\pure ap. va (\n. F (Vec {n} B))
+        (pure vnil) (\{m} a as. ap (ap (pure vcons) (f a)) as)));
+--vecTrav Maybe (\traverse. traverse {app=maybeApp} maybeNonzero (vcons (suc zero) vnil))
 
 let ltreeTrav : {n} -> Trav (LTree {n})
     = \T. T (\{F}{app}{B} f ta. app (\pure ap. ta (\n. F (LTree {n} B))
         (\a. ap (pure leaf) (f a)) (\{m} l r. ap (ap (pure node) l) r)));
 let maybeO : Bit -> Maybe Unit = \b. b (Maybe Unit) nothing (just tt);
 --ltreeTrav {S=Maybe} (\traverse. traverse {app=maybeApp} maybeO (initWord (ds dz)))
+
+let mapM : {F}{trav : Trav F}{M}{monad : Monad M}{B A} -> (A -> M B) -> F A -> M (F B)
+    = \{F}{trav}{M}{monad} f as. trav M (\traverse. traverse {app=monadApp monad} f as);
+--run {List Bit} (mapM {trav=listTrav}{monad=contMonad}
+--    (\b. cont (\k. k (not b))) (cons I (cons O nil))) (\x. x)
+
 
 
 -- Dependent Sums
@@ -488,15 +506,19 @@ let smap : {A B}{P : A -> U}{Q : B -> U}(f : A -> B) ->
 -- Containers
 
 let Container : {Sh} -> U
-    = \{Sh}. {C : U -> U} -> ((Shape : U)(Position : Shape -> U) -> C Shape) -> C Sh;
+    = \{Sh}. (C : U -> U) -> ((Shape : U)(Position : Shape -> U) -> C Shape) -> C Sh;
 let cpair : (Sh : U)(Pos : Sh -> U) -> Container {Sh}
-    = \Sh Pos C. C Sh Pos;
+    = \Sh Pos C c. c Sh Pos;
 let cshape : {Sh} -> Container {Sh} -> U
-    = \C. C (\Sh Pos. Sh);
+    = \c. c (\_. U) (\Sh Pos. Sh);
 let cposition : {Sh} -> Container {Sh} -> Sh -> U
-    = \C. C {\Sh. Sh -> U} (\Sh Pos. Pos);
-let cextend : {Sh} -> Container {Sh} -> U -> U
-    = \{Sh} C X. Sigma Sh (\s. (cposition {Sh} C) s -> X);
+    = \c. c (\Sh. Sh -> U) (\Sh Pos. Pos);
+let cextend : {Sh}{sh : Sh} -> Container {Sh} -> U -> U
+    = \{Sh}{sh} C X. Sigma Sh (\s. (cposition {Sh} C) s -> X) {sh};
+
+--proj2 (tt (cextend {Nat} (cpair Nat (\n. Fin {n})) Bit)
+--    (dpair (suc (suc zero)) (\fn. listLookup (cons I (cons O nil)) fn))) (fz)
+
 
 let CMorphism : {Sh1 Sh2 cmS}(C1 C2 : Container) -> U
     = \{Sh1}{Sh2}{cmS} C1 C2. {M : (sh1 : U)(sh2 : U) -> Container {sh1} -> Container {sh2} -> (sh1 -> sh2) -> U} ->
@@ -506,7 +528,7 @@ let cmpair : {Sh1 Sh2 C1 C2}(cmS : Sh1 -> Sh2) -> ({s} -> (cposition C2) (cmS s)
     = \{Sh1}{Sh2}{C1}{C2} cmS cmP CM. CM {Sh1}{Sh2}{C1}{C2} cmS cmP;
 let cmshape : {Sh1 Sh2 C1 C2} -> CMorphism C1 C2 -> Sh1 -> Sh2
     = \CM. CM {\Sh1 Sh2 _ _ _. Sh1 -> Sh2} (\cmS cmP. cmS);
-let cmposition : {cmS C1 C2} -> CMorphism C1 C2 -> {s} -> (cposition C2) (cmS s) -> (cposition C1) s
+let cmposition : {cmS C1 C2} -> CMorphism {cmS=cmS} C1 C2 -> {s} -> (cposition C2) (cmS s) -> (cposition C1) s
     = \CM. CM {\_ _ C1 C2 cmS. {s} -> (cposition C2) (cmS s) -> (cposition C1) s} (\cmS cmP. cmP);
 --let cmExtend ...
 
