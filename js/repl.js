@@ -1,4 +1,5 @@
 var repl = new $.Machine({
+      app : null,
       isPortrait : null,
       TC: null, debounce: null, debounceTime: 500, selectEnd: null,
       history: { past: [], cur: { code: $("#source").value, highlight: localStorage.getItem("replHighlight") }, future: [] },
@@ -7,7 +8,8 @@ var repl = new $.Machine({
 
 $.targets({
   repl: {
-    init () {
+    init (app) {
+      this.app = app;
       $("#source").style.height = getComputedStyle($("#source")).getPropertyValue("height");
       $("#source").style.width = getComputedStyle($("#source")).getPropertyValue("width");
       this.isPortrait = $("body").clientWidth / $("body").clientHeight > 3/2;
@@ -54,11 +56,6 @@ $.targets({
         const { code, highlight } = this.history.cur = this.history.future.pop();
         source.value = code;
         this.emit("updateHighlight", highlight)
-      } else if (e.inputType === "historyUndo" && this.history.past.length) {
-        this.history.future.push(this.history.cur);
-        const { code, highlight } = this.history.cur = this.history.past.pop();
-        source.value = code;
-        this.emit("updateHighlight", highlight)
       }
 
       if (highlightEl.children.length === 0) {
@@ -67,26 +64,27 @@ $.targets({
           case "insertText":
             const span = document.createElement("span");
             span.dataset.label = "ws"
-            span.innerText = this.history.cur.code;
+            span.appendChild(document.createTextNode(this.history.cur.code));
             highlightEl.appendChild(span)
         }
       } else {
         let offsetEnd, str, span;
-        const offsetStart = sourceEl.selectionStart - (e.data?.length ?? 0), range = document.createRange(), tmpRange = document.createRange(),
-              findSpan = (off, brs = 0) => $.all("#highlight > *").find(el => {
-                tmpRange.setEndAfter(el);
-                brs += el.innerText.split("\n").length - 1;
-                offsetEnd = tmpRange.toString().length + brs;
+        const offsetStart = sourceEl.selectionStart - (e.data?.length ?? 0) - (e.inputType === "insertLineBreak"),
+              range = document.createRange(),
+              findSpan = (off) => (offsetEnd = 0, $.all("#highlight > *").find(el => {
+                offsetEnd += el.innerText.length;
                 return offsetEnd > off
-              });
+              }));
         range.setStartBefore(highlightEl.firstChild);
         range.setEndAfter(highlightEl.lastChild);
-        tmpRange.setStartBefore(highlightEl.firstChild);
         switch (e.inputType) {
 
           case "insertFromPaste":
           case "insertFromDrop":
           case "insertText":
+          case "insertLineBreak":
+            let { data } = e;
+            if (e.inputType === "insertLineBreak") data = "\n";
             if (sourceEl.selectionEnd === sourceEl.value.length) {
               if (this.selectEnd !== null) {
                 span = findSpan(offsetStart);
@@ -95,11 +93,11 @@ $.targets({
                 span.innerText = str.substring(0, str.length - offsetEnd + offsetStart).replaceAll("\n", "<br>");
               }
               span = highlightEl.lastChild;
-              if (span.dataset.label === "ws") span.innerText += e.data;
+              if (span.dataset.label === "ws") span.innerText += data;
               else {
                 const spant = document.createElement("span");
                 spant.dataset.label = "ws";
-                spant.innerText = e.data;
+                spant.innerText = data;
                 highlightEl.appendChild(spant)
               }
             } else {
@@ -108,7 +106,7 @@ $.targets({
               const pos = str.length - offsetEnd + offsetStart, len = this.selectEnd === null ? 0 : this.selectEnd - offsetStart,
                     spanEnd = this.selectEnd === null ? span : findSpan(this.selectEnd); // Repeated work
               if (span === spanEnd) {
-                if (span.dataset.label === "ws") span.innerHTML = str.substring(0, pos).replaceAll("\n", "<br>") + e.data + str.substring(pos + len).replaceAll("\n", "<br>");
+                if (span.dataset.label === "ws") span.innerHTML = str.substring(0, pos).replaceAll("\n", "<br>") + data.replaceAll("\n", "<br>") + str.substring(pos + len).replaceAll("\n", "<br>");
                 else {
                   const spanl = document.createElement("span"),
                         spant = document.createElement("span"),
@@ -117,7 +115,7 @@ $.targets({
                   spant.dataset.label = "ws";
                   spanl.innerText = str.substring(0, pos).replaceAll("\n", "<br>");
                   spanr.innerText = str.substring(pos + len).replaceAll("\n", "<br>");
-                  spant.innerText = e.data;
+                  spant.appendChild(document.createTextNode(data));//.innerText = data.replaceAll("\n", "<br>");
                   span.replaceWith(spanl, spant, spanr)
                 }
               } else {
@@ -128,14 +126,14 @@ $.targets({
                 else span.innerHTML = str.substring(0, pos).replaceAll("\n", "<br>");
   
                 if (span.dataset.label === "ws" && spanEnd.dataset.label === "ws") {
-                  span.innerHTML += e.data + spanEnd.innerHTML;
+                  span.innerHTML += data + spanEnd.innerHTML;
                   spanEnd.remove()
-                } else if (span.dataset.label === "ws") span.innerText += e.data
-                else if (spanEnd.dataset.label === "ws") spanEnd.innerText = e.data + spanEnd.innerText
+                } else if (span.dataset.label === "ws") span.innerText += data
+                else if (spanEnd.dataset.label === "ws") spanEnd.innerText = data + spanEnd.innerText
                 else {
                   const spant = document.createElement("span");
                   spant.dataset.label = "ws"
-                  spant.innerText = e.data;
+                  spant.innerText = data;
                   highlightEl.insertBefore(spant, spanEnd)
                 }
               }
@@ -167,7 +165,7 @@ $.targets({
           case "historyUndo":
             if (this.history.past.length) {
               this.history.future.push(this.history.cur);
-              let ix = this.history.past.findIndex(({ code }) => code === sourceEl.value);
+              let ix = this.history.past.findLastIndex(({ code }) => code === sourceEl.value);
               let { code, highlight } = this.history.cur = this.history.past[ix];
               this.history.past = this.history.past.slice(0, ix);
               sourceEl.value = code;
@@ -184,10 +182,10 @@ $.targets({
       let term, type, metas, ctx, err, stack;
       try {
         ({ term, type, metas, ctx } = await this.TC.run(memory));
-        tell.log.call(citizen, "Success; Metacontext:\n", ...metas.map(meta => meta.toString(ctx) + "\n"))
+        tell.log.call(this.app, "Success; Metacontext:\n", ...metas.map(meta => meta.toString(ctx) + "\n"))
       } catch (e) {
         err = e.message; stack = e.stack;
-        tell.log.call(citizen, "Fail; Message:", e.message)
+        tell.log.call(this.app, "Fail; Message:", e.message)
       }
       log.childNodes.length && $.load("hr", "#log");
       log.appendChild(document.createTextNode(err ? err

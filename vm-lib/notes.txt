@@ -714,3 +714,52 @@ let makeZipper : {F : U -> U}{trav : Trav F}{A} -> F A -> Zipper F A
         (traverse {app=contApp} (\a. cont (\k. zstep a (dcomp k (maybe a id)))) fa) zdone);
 
 makeZipper
+
+
+
+
+(vcons {Bit} O vnil) (\n. Sigma (Pair Nat Nat) (\p. Pair (Vec {fst p} Bit) (Vec {snd p} Bit)) {pair n (pred n)})
+    (dpair {Pair Nat Nat}{\p. Pair (Vec {fst p} Bit) (Vec {snd p} Bit)} (pair zero zero) (pair vnil vnil))
+    (\{m} a s. dpair {Pair Nat Nat}{\p. Pair (Vec {fst p} Bit) (Vec {snd p} Bit)} (pair (suc (fst (proj1 s))) (fst (proj1 s))) (pair (vcons {Bit} a (fst (proj2 s))) (fst (proj2 s))))
+
+
+
+
+-- F-Algebras **Requires Fixpoint
+
+let Algebra : (F : U -> U){functor : Functor F}(A : U) -> U
+    = \F A. {T} -> ((alg : F A -> A) -> F T) -> F T;
+let Arith : U -> U =
+    \T. (const : Nat -> T)(add : T -> T -> T)(mul : T -> T -> T) -> T;
+let arithConst : {T} -> Nat -> Arith T = \n c a m. c n;
+let arithAdd : {T} -> Arith T -> Arith T -> Arith T = \x y c a m. a (x c a m) (y c a m);
+let arithMul : {T} -> Arith T -> Arith T -> Arith T = \x y c a m. m (x c a m) (y c a m);
+
+let expr : {T} -> Arith T = arithAdd (arithConst (suc zero)) (arithConst (suc zero));
+expr {Nat} id add mul
+
+-- Needs fn : A -> B, not fn : Nat -> A
+let arithFunctor : Functor Arith = \F. F (\fn ar c a m. ar fn a m);
+let arithAlg : Algebra Arith = _;
+
+
+
+
+-- Leibniz Equality as record
+
+let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> ((refl : {Z z}{Q : Z -> U} -> Q z -> Q z) -> P x -> P y) -> P x -> P y;
+let refl : {T t} -> Eq {T} t t                        = \_ E. E (\refl. refl);
+let trans : {T}{x y z : T} -> Eq y z -> Eq x y -> Eq {T} x z
+    = \yz xy P E. E (\refl. refl );
+let sym : {T}{x y : T} -> Eq x y -> Eq {T} y x        = \{T}{x} xy P. xy (\z. P z -> P x) (refl {T} P);
+let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (\x. P (f x));
+
+
+\(a : Nat)(b : Nat)(c : Nat)(bc : Eq {Nat} b c)(ab : Eq {Nat} a b). tt (Eq {Nat} a c)
+    (trans {Nat}{a}{b}{c} bc ab)
+
+
+
+
+let concatNilIsAssoc : {T ys zs} -> Associative {List T} Eq concat = \{T}{ys}{zs}. trans {List T} (concat nil (concat ys zs) (trans {List T} (concat ys zs) (concat (concat nil ys) zs)));
+concatNilIsAssoc

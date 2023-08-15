@@ -1,6 +1,7 @@
 let id : {A} -> A -> A                                = \x. x;
 let const : {A B} -> A -> B -> A                      = \x _. x;
 let const2 : {A B} -> A -> B -> B                     = \_. id;
+let apply : {A B} -> A -> (A -> B) -> B               = \x f. f x;
 
 let dcomp : {A : U}{B : A -> U}{C : {x : A} -> B x -> U} ->
             ({x : A}(y : B x) -> C {x} y) -> (g : (x : A) -> B x) ->
@@ -124,12 +125,14 @@ let nothing : {A} -> Maybe A                          = \M n j. n;
 let just : {A} -> A -> Maybe A                        = \a M n j. j a;
 let maybe : {B A} -> B -> (A -> B) -> Maybe A -> B    = \{B} b f ma. ma B b f;
 
+
 -- Either
 
 let Either : U -> U -> U                              = \A B. (E : U) -> (A -> E) -> (B -> E) -> E;
 let left : {A B} -> A -> Either A B                   = \a E l r. l a;
 let right : {A B} -> B -> Either A B                  = \b E l r. r b;
 let either : {C A B} -> (A -> C) -> (B -> C) -> Either A B -> C = \{C} f g eab. eab C f g;
+
 
 -- Lists
 
@@ -146,6 +149,9 @@ let listTail : {A} -> List A -> List A
 let listLookup : {A}(l : List A) -> Fin {length l} -> A
     = \{A} l fn. listHead (fn (\n. List A) (\acc. listTail acc) l);
 
+let reverse : {A} -> List A -> List A                 = \l. l _ id (\a acc as. acc (cons a as)) nil;
+
+
 -- Non-empty list
 
 let Nonempty : U -> U                                 = \A. (N : U) -> (A -> N) -> (A -> N -> N) -> N;
@@ -153,6 +159,16 @@ let sing : {A} -> A -> Nonempty A                     = \a N s c. s a;
 let ncons : {A} -> A -> Nonempty A -> Nonempty A      = \a as N s c. c a (as N s c);
 
 let nelToList : {A} -> Nonempty A -> List A           = \{A} nl. nl (List A) (\a. cons a nil) cons;
+
+
+-- Trees
+
+let Tree : U -> U = \A. (T : U) -> (T -> T -> T) -> (A -> T) -> T -> T;
+--let node : {A} -> Tree A -> Tree A -> Tree A = \ta tb T n l t. n (ta T n l t) (tb T n l t);
+let node : {A} -> Tree A -> Tree A -> Tree A
+    = \ta tb T n l t. ta T n (\a. tb T n (\b. n (l a) (l b)) (l a)) (tb T n l t);
+let leaf : {A} -> A -> Tree A = \a T n l t. l a;
+let tnil : {A} -> Tree A = \T n l t. t;
 
 
 -- Continuations
@@ -173,19 +189,6 @@ let undwrap : {T t} -> DWrap {T} t -> T               = \{V}{v} w. w (\_. V) (\_
 -- tt (DWrap tt) ((\t. tt (DWrap {Unit} t) (dwrap t)) tt)
 
 
--- Leibniz Equality
-
-let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> P x -> P y;
-let refl : {T t} -> Eq {T} t t                        = \P pt. pt;
-let trans : {T}{x y z : T} -> Eq y z -> Eq x y -> Eq {T} x z = \yz xy P px. yz P (xy P px);
-let sym : {T}{x y : T} -> Eq x y -> Eq {T} y x        = \{T}{x} xy P. xy (\z. P z -> P x) (refl {T} P);
-let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (\x. P (f x));
-let subst : {T}{x y : T}(P : T -> U) -> Eq x y -> P x -> P y = \P xy. xy P;
-
-let EqIsEquiv : {T} -> IsEquivalence {T} Eq           = \E. E refl sym trans;
-let EqSetoid : {T} -> Setoid {T}                      = \S. S Eq (\E. E refl sym trans);
--- EqSetoid {Nat} (\Rel isEquiv. isEquiv (\refl sym trans. refl))
-
 -- Dependent Nats
 
 let DNat : {n} -> U
@@ -203,6 +206,19 @@ let dfoldnat : {A : Nat -> U}{n} -> ({m} -> A m -> A (suc m)) -> A zero -> DNat 
 
 let initWord : {n} -> DNat {n} -> LTree {n} Bit       = \dn. dn (\n. LTree {n} Bit) (\acc. node acc acc) (leaf O);
 -- initWord (ds (ds dz))
+
+
+-- Dependent Maybe
+
+let DMaybe : (A : U){ma} -> U
+    = \A {ma}. (DM : Maybe A -> U) -> DM nothing -> ((a : A) -> DM (just a)) -> DM ma;
+let dnothing : {A} -> DMaybe A {nothing} = \DM n j. n;
+let djust : {A}(a : A) -> DMaybe A {just a} = \a DM n j. j a;
+let dmaybe : {A}{B : Maybe A -> U} -> B nothing -> ((a : A) -> B (just a)) ->
+             {ma : Maybe A} -> DMaybe A {ma} -> B ma
+    = \{B=B} b f dma. dma B b f;
+--dmaybe {Nat}{\mn. mn U Unit (\n. Fin {suc n})} tt (\v. fz {v}) (djust (suc zero))
+--proj2 {Maybe Nat}{\mn. mn U Unit (\n. Fin {suc n})} (dpair (just (suc zero)) fz)
 
 
 -- Finite Sets
@@ -228,6 +244,8 @@ let vcons : {A n} -> A -> Vec {n} A -> Vec {suc n} A  = \a as V n c. c a (as V n
 let head : {A n} -> Vec {suc n} A -> A                = \{A} v. v (\_. A) _ (\x xs. x);
 let tail : {A n} -> Vec {suc n} A -> Vec {n} A        = \{A}{n} v. v (\_. Vec {n} A) _ (\x xs. xs);
 -- tail (vcons I (vcons O vnil))
+let vconcat : {A m n} -> Vec {m} A -> Vec {n} A -> Vec {add m n} A
+    = \{A}{n=n} v1 v2. v1 (\m. Vec {add m n} A) v2 vcons;
 
 let foldvec : {A}{B : Nat -> U}{n} ->
               ({m} -> A -> B m -> B (suc m)) -> B zero -> Vec {n} A -> B n
@@ -307,92 +325,36 @@ let somebush : Bush Bit
 -- mapbush not somebush
 
 
--- Nullary Relations
 
-let neg : U -> U                                      = \P. P -> Void;
-let contradiction : {P Q} -> P -> neg P -> Q          = \p notp. absurd (notp p);
+-- Monoid Structure
 
-let Reflects : U -> Bit -> U                          = \P b. (R : Bit -> U) -> (P -> R I) -> (neg P -> R O) -> R b;
-let ofyes : {P} -> P -> Reflects P I                  = \p R y n. y p;
-let ofno : {P} -> neg P -> Reflects P O               = \negp R y n. n negp;
+let RawMonoid : U -> U
+    = \C. (M : U) -> ((comb : C -> C -> C)(neut : C) -> M) -> M;
 
-let Dec : (P : U) -> U
-    = \P. {D} -> ((does : Bit) -> (proof : Reflects P does) -> D) -> D;
-let because : {P} -> (does : Bit) -> Reflects P does -> Dec P
-    = \does proof D. D does proof;
-let yes : {P} -> P -> Dec P                           = \p. because I (ofyes p);
-let no : {P} -> neg P -> Dec P                        = \negp. because O (ofno negp);
+let treeMonoid : {T} -> RawMonoid (Tree T)            = \{T} _ M. M node tnil;
+--treeMonoid (Tree Bit) (\comb neut. comb (comb neut (comb neut neut)) neut)
+let listMonoid : {T} -> RawMonoid (List T)            = \{T} _ M. M concat nil;
+--listMonoid (List Bit) (\comb neut. comb (cons I nil) neut)
 
-let Decidable : {A B} -> (A -> B -> U) -> U           = \{A}{B} Rel. (x : A)(y : B) -> Dec (Rel x y);
-
-
--- Unary Relations
-
-let EmptySet : {A} -> A -> U                          = \_. Void;
-let UniversalSet : {A} -> A -> U                      = \_. Unit;
-let Member : {A} -> A -> (A -> U) -> U                = \x P. P x;
-let Subset : {A} -> (A -> U) -> (A -> U) -> U         = \P Q. {x} -> Member x P -> Member x Q;
-let Empty : {A} -> (A -> U) -> U                      = \P. {x} -> neg (Member x P);
-let Universal : {A} -> (A -> U) -> U                  = \P. {x} -> Member x P;
-let ImplPred : {A} -> (A -> U) -> (A -> U) -> A -> U  = \P Q x. Member x P -> Member x Q;
-let Assert : {A B} -> (A -> B) -> (B -> U) -> A -> U  = \f P x. P (f x);
+let RawIndexedMonoid : {I}{monoid : RawMonoid I}(C : I -> U) -> U
+    = \{I}{monoid} C. monoid U (\comb neut. {x}(M : I -> U) ->
+        ((icomb : {i j} -> C i -> C j -> C (comb i j))(ineut :  C neut) -> M x) -> M x);
+let natMonoid : RawMonoid Nat = \_ M. M add zero;
+let vecMonoid : {T} -> RawIndexedMonoid {monoid=natMonoid} (\n. Vec {n} T)
+    = \{T} _ M. M vconcat vnil;
+--vecMonoid (\n. Vec {n} Bit) (\comb neut. comb (vcons I neut) neut)
 
 
--- Binary Relations
+-- Foldable
 
-let Implies : {A B} -> (A -> B -> U) -> (A -> B -> U) -> U
-    = \P Q. {x y} -> P x y -> Q x y;
-let Preserves : {A B} -> (A -> B) -> (A -> A -> U) -> (B -> B -> U) -> U
-    = \f P Q. {x y} -> P x y -> Q (f x) (f y);
+let Foldable : (U -> U) -> U
+    = \F. (T : U) -> ((foldMap : {M A}{monoid : Monoid M} -> (A -> M) -> F A -> M) -> T) -> T;
 
-let Respects : {A B} -> (A -> U) -> (B -> U) -> (A -> B -> U) -> U
-    = \P Q Rel. {x y} -> Rel x y -> P x -> Q y;
-let Substitutive : {A} -> (A -> A -> U) -> U
-    = \{A} Rel. (P : A -> U) -> Respects P P Rel;
-
-let Reflexive : {A} -> (A -> A -> U) -> U             = \Rel. {x} -> Rel x x;
-let reflexive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Reflexive Rel -> Reflexive (on Rel f)
-    = \_ _ refl. refl;
-
-let Symmetric : {A} -> (A -> A -> U) -> U             = \Rel. {x y} -> Rel x y -> Rel y x;
-let symmetric : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Symmetric Rel -> Symmetric (on Rel f)
-    = \_ _ sym. sym;
-
-let Transitive : {A} -> (A -> A -> U) -> U            = \Rel. {i j k} -> Rel j k -> Rel i j -> Rel i k;
-let transitive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Transitive Rel -> Transitive (on Rel f)
-    = \_ _ trans. trans;
-
-let IsEquivalence : {A} -> (A -> A -> U) -> U
-    = \{A} Rel. {E} -> ((refl : Reflexive {A} Rel)
-        (sym : Symmetric {A} Rel)(trans : Transitive {A} Rel) -> E) -> E;
-let isEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) -> IsEquivalence Rel -> IsEquivalence (on Rel f)
-    = \f Rel eq E. eq (\refl sym trans. E
-        (reflexive f Rel refl) (symmetric f Rel sym) (transitive f Rel trans));
-
-
-let IsDecEquivalence : {A} -> (A -> A -> U) -> U
-    = \{A} Rel. {D} -> ((DecRel : Decidable {A}{A} Rel)(isEquiv : IsEquivalence {A} Rel) -> D) -> D;
-let decidable : {A B}(f : B -> A)(Rel : A -> A -> U) -> Decidable Rel -> Decidable (on Rel f)
-    = \f _ dec x y. dec (f x) (f y);
-let isDecEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) ->
-                       IsDecEquivalence Rel -> IsDecEquivalence (on Rel f)
-    = \f Rel deq DE. deq (\DecRel isEquiv. DE (decidable f Rel DecRel) (isEquivalence f Rel isEquiv));
-
-let Setoid : {A}{Rel : A -> A -> U} -> U
-    = \{Rel=Rel}. {S : {T} -> (T -> T -> U) -> U} -> ({T}(rel : T -> T -> U)
-        (isEquiv : IsEquivalence {T} rel) -> S rel) -> S Rel;
-let DecSetoid : {A}{Rel : A -> A -> U} -> U
-    = \{Rel=Rel}. {D : {T} -> (T -> T -> U) -> U} -> ({T}(rel : T -> T -> U)
-        (isDecEquiv : IsDecEquivalence {T} rel) -> D rel) -> D Rel;
-
-
--- Monoid
-
-let Monoid : U -> U                                   = \(M : U). ((neut : M) -> (comb : {A} -> A -> M -> M) -> M) -> M;
-
-let maybeMonoid : {A} -> Monoid (Maybe A)             = \{Z} M. M nothing (\{Y} a _. just {Y} a);
--- maybeMonoid {Bit} (\neut comb. comb I neut)
-
+let foldableTree : Foldable Tree
+    = \T F. F (\{M}{monoid=monoid} f tr. monoid M (\comb neut. tr M comb f neut));
+let bitToNat : Bit -> Nat = \b. b Nat (suc zero) zero;
+--foldableTree Nat (\foldMap. foldMap {monoid=natMonoid} bitToNat
+--    (node (leaf I) (node tnil (leaf I))))
 
 -- Functors
 
@@ -460,7 +422,7 @@ let mapM : {A B}{M : U -> U}{monad : Monad M} -> (A -> M B) -> List A -> M (List
 let Trav : (F : U -> U) -> U
     = \F. (S : U -> U){T} -> ((traverse : {G : U -> U}{app : App G}{B A} -> (A -> G B) -> F A -> G (F B)) -> S (F T)) -> S (F T);
 let maybeTrav : Trav Maybe
-    = \T. T (\{app=app} f ma. app (\pure ap. ma _ (pure nothing) (\a. ap (pure just) (f a))));
+    = \_ T. T (\{G}{app}{B} f ma. app {Maybe B} (\pure ap. ma (G (Maybe B)) (pure nothing) (\a. ap (pure just) (f a))));
 let listOfNonzero : Nat -> List Nat = \n. n (List Nat) (\s. cons n nil) nil;
 --maybeTrav List (\traverse. traverse {app=listApp} listOfNonzero (just (suc zero)))
 
@@ -470,7 +432,7 @@ let maybeNonzero : Nat -> Maybe Nat = \n. n (Maybe Nat) (\s. just n) nothing;
 --listTrav Maybe (\traverse. traverse {app=maybeApp} maybeNonzero (cons (suc zero) nil))
 
 let vecTrav : {n} -> Trav (Vec {n})
-    = \{n} _ T. T (\{F}{app}{B} f va. app {Vec {n} B} (\pure ap. va (\n. F (Vec {n} B))
+    = \{n} _ T. T (\{G}{app}{B} f va. app {Vec {n} B} (\pure ap. va (\n. G (Vec {n} B))
         (pure vnil) (\{m} a as. ap (ap (pure vcons) (f a)) as)));
 --vecTrav Maybe (\traverse. traverse {app=maybeApp} maybeNonzero (vcons (suc zero) vnil))
 
@@ -487,6 +449,164 @@ let mapM : {F}{trav : Trav F}{M}{monad : Monad M}{B A} -> (A -> M B) -> F A -> M
 
 
 
+-- Leibniz Equality
+
+let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> P x -> P y;
+let refl : {T t} -> Eq {T} t t                        = \P pt. pt;
+let trans : {T}{x y z : T} -> Eq y z -> Eq x y -> Eq {T} x z = \yz xy P px. yz P (xy P px);
+let sym : {T}{x y : T} -> Eq x y -> Eq {T} y x        = \{T}{x} xy P. xy (\z. P z -> P x) (refl {T} P);
+let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (\x. P (f x));
+let cong2 : {A B C x y u v}(op : A -> B -> C) -> Eq x y -> Eq {B} u v -> Eq {C} (op x u) (op y v)
+    = \{y=y}{u=u} op xy uv P pxuyv. uv (\u. P (op y u)) (xy (\x. P (op x u)) pxuyv);
+let subst : {T}{x y : T}(P : T -> U) -> Eq x y -> P x -> P y = \P xy. xy P;
+let step : {A}(x : A){y z} -> Eq {A} y z -> Eq {A} x y -> Eq {A} x z = \_. trans;
+
+let EqIsEquiv : {T} -> IsEquivalence {T} Eq           = \E. E refl sym trans;
+let EqSetoid : {T} -> Setoid {T}                      = \S. S Eq (\E. E refl sym trans);
+-- EqSetoid {Nat} (\Rel isEquiv. isEquiv (\refl sym trans. refl))
+
+
+-- Nullary Relations
+
+let neg : U -> U                                      = \P. P -> Void;
+let contradiction : {P Q} -> P -> neg P -> Q          = \p notp. absurd (notp p);
+
+let Reflects : U -> Bit -> U                          = \P b. (R : Bit -> U) -> (P -> R I) -> (neg P -> R O) -> R b;
+let ofyes : {P} -> P -> Reflects P I                  = \p R y n. y p;
+let ofno : {P} -> neg P -> Reflects P O               = \negp R y n. n negp;
+
+let Dec : (P : U) -> U
+    = \P. {D} -> ((does : Bit) -> (proof : Reflects P does) -> D) -> D;
+let because : {P} -> (does : Bit) -> Reflects P does -> Dec P
+    = \does proof D. D does proof;
+let yes : {P} -> P -> Dec P                           = \p. because I (ofyes p);
+let no : {P} -> neg P -> Dec P                        = \negp. because O (ofno negp);
+
+let Decidable : {A B} -> (A -> B -> U) -> U           = \{A}{B} Rel. (x : A)(y : B) -> Dec (Rel x y);
+
+
+-- Unary Relations
+
+let EmptySet : {A} -> A -> U                          = \_. Void;
+let UniversalSet : {A} -> A -> U                      = \_. Unit;
+let Member : {A} -> A -> (A -> U) -> U                = \x P. P x;
+let Subset : {A} -> (A -> U) -> (A -> U) -> U         = \P Q. {x} -> Member x P -> Member x Q;
+let Empty : {A} -> (A -> U) -> U                      = \P. {x} -> neg (Member x P);
+let Universal : {A} -> (A -> U) -> U                  = \P. {x} -> Member x P;
+let ImplPred : {A} -> (A -> U) -> (A -> U) -> A -> U  = \P Q x. Member x P -> Member x Q;
+let Assert : {A B} -> (A -> B) -> (B -> U) -> A -> U  = \f P x. P (f x);
+
+
+-- Binary Relations
+
+let Implies : {A B} -> (A -> B -> U) -> (A -> B -> U) -> U
+    = \P Q. {x y} -> P x y -> Q x y;
+let Preserves : {A B} -> (A -> B) -> (A -> A -> U) -> (B -> B -> U) -> U
+    = \f P Q. {x y} -> P x y -> Q (f x) (f y);
+let BinPreserves : {A B C} -> (A -> B -> C) -> (A -> A -> U) -> (B -> B -> U) -> (C -> C -> U) -> U
+    = \op P Q R. {x y u v} -> P x y -> Q u v ->  R (op x u) (op y v);
+
+let Respects : {A B} -> (A -> U) -> (B -> U) -> (A -> B -> U) -> U
+    = \P Q Rel. {x y} -> Rel x y -> P x -> Q y;
+let Substitutive : {A} -> (A -> A -> U) -> U
+    = \{A} Rel. (P : A -> U) -> Respects P P Rel;
+
+let Reflexive : {A} -> (A -> A -> U) -> U             = \Rel. {x} -> Rel x x;
+let reflexive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Reflexive Rel -> Reflexive (on Rel f)
+    = \_ _ refl. refl;
+
+let Symmetric : {A} -> (A -> A -> U) -> U             = \Rel. {x y} -> Rel x y -> Rel y x;
+let symmetric : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Symmetric Rel -> Symmetric (on Rel f)
+    = \_ _ sym. sym;
+
+let Transitive : {A} -> (A -> A -> U) -> U            = \Rel. {i j k} -> Rel j k -> Rel i j -> Rel i k;
+let transitive : {A B} -> (f : B -> A) -> (Rel : A -> A -> U) -> Transitive Rel -> Transitive (on Rel f)
+    = \_ _ trans. trans;
+
+
+let IsEquivalence : {A} -> (A -> A -> U) -> U
+    = \{A} Rel. {E} -> ((refl : Reflexive {A} Rel)
+        (sym : Symmetric {A} Rel)(trans : Transitive {A} Rel) -> E) -> E;
+let isEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) -> IsEquivalence Rel -> IsEquivalence (on Rel f)
+    = \f Rel eq E. eq (\refl sym trans. E
+        (reflexive f Rel refl) (symmetric f Rel sym) (transitive f Rel trans));
+
+let IsDecEquivalence : {A} -> (A -> A -> U) -> U
+    = \{A} Rel. {D} -> ((DecRel : Decidable {A}{A} Rel)(isEquiv : IsEquivalence {A} Rel) -> D) -> D;
+let decidable : {A B}(f : B -> A)(Rel : A -> A -> U) -> Decidable Rel -> Decidable (on Rel f)
+    = \f _ dec x y. dec (f x) (f y);
+let isDecEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) ->
+                       IsDecEquivalence Rel -> IsDecEquivalence (on Rel f)
+    = \f Rel deq DE. deq (\DecRel isEquiv. DE (decidable f Rel DecRel) (isEquivalence f Rel isEquiv));
+
+
+let Setoid : {A}{Rel : A -> A -> U} -> U
+    = \{Rel=Rel}. {S : {T} -> (T -> T -> U) -> U} -> ({T}(rel : T -> T -> U)
+        (isEquiv : IsEquivalence {T} rel) -> S rel) -> S Rel;
+let DecSetoid : {A}{Rel : A -> A -> U} -> U
+    = \{Rel=Rel}. {D : {T} -> (T -> T -> U) -> U} -> ({T}(rel : T -> T -> U)
+        (isDecEquiv : IsDecEquivalence {T} rel) -> D rel) -> D Rel;
+
+
+-- Operations
+
+let Congruent : {A}(Rel : A -> A -> U)(f : A -> A) -> U
+    = \Rel f. Preserves f Rel Rel;
+let BinCongruent : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
+    = \Rel op. BinPreserves op Rel Rel Rel;
+
+let Identity : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
+    = \Rel op e. Pair ({x} -> Rel (op e x) x) ({x} -> Rel (op x e) x);
+let Associative : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
+    = \Rel op. {x y z} -> Rel (op (op x y) z) (op x (op y z));
+let Commutative : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
+    = \Rel op. {x y} -> Rel (op x y) (op y x);
+let Idempotent : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
+    = \Rel op. {x} -> Rel (op x x) x;
+
+
+-- Algebras
+
+let IsMagma : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
+    = \{A} Rel op. {M} -> ((isEquiv : IsEquivalence {A} Rel)(opcong : BinCongruent Rel op) -> M) -> M;
+let Magma : {A}{Rel : A -> A -> U}{op : A -> A -> A} -> U
+    = \{A}{Rel}{Op}. {M : {T} -> (T -> T -> U) -> (T -> T -> T) -> U} ->
+        ({C}{rel : C -> C -> U}{op : C -> C -> C}(isMagma : IsMagma {C} rel op) -> M rel op) -> M Rel Op;
+
+let IsUnitalMagma : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
+    = \{A} Rel op e. {UM} -> ((isMagma : IsMagma {A} Rel op)(identity : Identity Rel op e) -> UM) -> UM;
+let UnitalMagma : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
+    = \{A}{Rel}{Op}{E}. {UM : {T} -> (T -> T -> U) -> (T -> T -> T) -> T -> U} ->
+        ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isUnitalMagma : IsUnitalMagma {C} rel op e) -> UM rel op e) -> UM Rel Op E;
+
+let IsMonoid : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
+    = \{A} Rel op e. {M} -> ((isUnitalMagma : IsUnitalMagma {A} Rel op e)(assoc : Associative {A} Rel op) -> M) -> M;
+let Monoid : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
+    = \{A}{Rel}{Op}{E}. {M : {T} -> (T -> T -> U) -> (T -> T -> T) -> T -> U} ->
+        ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isMonoid : IsMonoid {C} rel op e) -> M rel op e) -> M Rel Op E;
+
+let IsCommMonoid : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
+    = \{A} Rel op e. {CM} -> ((isMonoid : IsMonoid {A} Rel op e)(comm : Commutative {A} Rel op) -> CM) -> CM;
+let CommMonoid : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
+    = \{A}{Rel}{Op}{E}. {CM : {T} -> (T -> T -> U) -> (T -> T -> T) -> T -> U} ->
+        ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isCommMonoid : IsCommMonoid {C} rel op e) -> CM rel op e) -> CM Rel Op E;
+
+let IsIdemCommMonoid : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
+    = \{A} Rel op e. {ICM} -> ((isCommMonoid : IsCommMonoid {A} Rel op e)(idem : Idempotent {A} Rel op) -> ICM) -> ICM;
+let IdemCommMonoid : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
+    = \{A}{Rel}{Op}{E}. {ICM : {T} -> (T -> T -> U) -> (T -> T -> T) -> T -> U} ->
+        ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isIdemCommMonoid : IsIdemCommMonoid {C} rel op e) -> ICM rel op e) -> ICM Rel Op E;
+
+
+let TreeIsMagma : {T} -> IsMagma {Tree T} Eq node     = \IsM. IsM EqIsEquiv (cong2 node);
+let TreeMagma : {T} -> Magma {Tree T} = \{T} M. M {Tree T}{Eq {Tree T}}{node} TreeIsMagma;
+--TreeMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
+
+let TreeIsUnitalMagma : {T} -> IsUnitalMagma {Tree T} Eq node tnil = \IsUM. IsUM TreeIsMagma (pair refl refl);
+let TreeUnitalMagma : {T} -> UnitalMagma {Tree T} = \{T} UM. UM {Tree T}{Eq {Tree T}}{node}{tnil} TreeIsUnitalMagma;
+--TreeUnitalMagma {Bit} (\IsUM. IsUM (\IsM Iden. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl))))
+
+
 -- Dependent Sums
 
 let Sigma : (A : U)(B : A -> U){a : A} -> U
@@ -500,7 +620,6 @@ let proj2 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> B a
 let smap : {A B}{P : A -> U}{Q : B -> U}(f : A -> B) ->
            ({x} -> P x -> Q (f x)) -> Sigma A P -> Sigma B Q
     =\{B=B}{Q=Q} f g s. s (\b. Sigma B Q) (\x y. dpair (f x) (g y));
-
 
 
 -- Containers

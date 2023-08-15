@@ -35,7 +35,7 @@ $.targets({
     // initPeerWC();
     citizen.emit("init");
     
-    repl.emit("init");
+    repl.emit("init", citizen);
 
     await chord.emitAsync("startTimer");
 

@@ -1,0 +1,166 @@
+<!doctype html>
+<html>
+<head>
+  <title>REPL for the Citizen project VM language</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="keywords" content="Citizen, blockchain, smart contracts, toy implementation">
+  <meta name="description" content="REPL for the virtual machine language used by the Citizen project.">
+  <link rel="icon" type="image/x-icon" href="icons/favicon.ico">
+  <style>
+ @font-face {
+  font-family: 'univers';
+  src: url('fonts/UniversNextTypewriter.woff')  format('woff'),
+      url('fonts/UniversNextTypewriter.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap }
+* { font-family: literata }
+body {
+  margin: 0;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-flow: column nowrap;
+  color: #e3e3e3;
+  gap: 1px;
+  background: #455d7a }
+.button {
+  padding: .1em .2em;
+  border-radius: .2em;
+  background: #0002;
+  border: 1.5px solid #0007;
+  cursor: pointer;
+  user-select: none;
+  font: 1rem lato }
+.button:active { background: #0006 }
+section {
+  flex: 1 0;
+  height: 0;
+  display: flex }
+header {
+  display: flex;
+  flex-flow: row wrap;
+  justify-content: space-between;
+  align-items: center;
+  padding: .5em;
+  background: #233142;
+  font-family: lato;
+  text-align: center;
+  gap: .5em }
+#logo {
+  font: x-large literata;
+  margin-left: .3em }
+  #menu {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: .3em }
+  #source, #highlight, #log {
+    background: #233142;
+    font-family: univers;
+    font-variant-ligatures: none;
+    font-size: 12pt;
+    line-height: 15pt;
+    flex: 1 0;
+    padding: .5em }
+  #source {
+    position: absolute;
+    background: transparent;
+    margin: 0;
+    color: transparent;
+    caret-color: #e3e3e3;
+    outline: 0;
+    border-color: #455d7a;
+    width: calc(100% - 1em);
+    height: calc(50% - 1em) }
+  #highlight { overflow-y: scroll }
+  #highlight > * {
+    font-family: univers;
+    font-variant-ligatures: none;
+    line-height: 1em }
+  #highlight > [data-label="ws"] { color: #d3dee9 }
+  #highlight > [data-label="encl"] { color: #5e81ac }
+  #highlight > [data-label="ident"] { color: #a3be8c }
+  #highlight > [data-label="atom"] { color: #d08770 }
+  #highlight > [data-label="piBinder"] { color: #81a1c1 }
+  #highlight > [data-label="pi"] { color: #b4616a }
+  #highlight > [data-label="lamBinder"] { color: #ebcb8b }
+  #highlight > [data-label="lam"] { color: #88c0d0 }
+  #highlight > [data-label="nameImpl"] { color: #8fbcbb }
+  #highlight > [data-label="let"] { color: #b48ead }
+  #highlight::after { content: " " }
+  #katRepl {
+    position: relative;
+    word-break: break-word;
+    white-space: pre-wrap }
+  #source::selection { background: #455d7a80 }
+  /*#highlight *::selection { background: transparent }*/
+  #log::selection { background: #455d7a }
+  #log { 
+    word-break: break-all;
+    overflow-y: auto }
+  hr {
+    border: 0;
+    height: 0;
+    border-top: 1px solid #455d7a }
+
+@media (min-aspect-ratio: 3/2) {
+  section { flex-direction: row }
+  #source {
+    border-width: 0 1px 0 0;
+    width: calc(50% - 1em);
+    height: calc(100% - 1em);
+    resize: horizontal } }
+@media (max-aspect-ratio: 3/2) {
+  section { flex-direction: column }
+  #source {
+    border-width: 0 0 1px 0;
+    width: calc(100% - 1em);
+    height: calc(50% - 1em);
+    resize: vertical } }
+  </style>
+</head>
+<body>
+  <header>
+    <div id="logo">Citizen</div>
+    <div id="menu">
+      <span id="run" class="button">Run</span>
+      <span id="clear" class="button">Clear</span>
+    </div>
+  </header>
+  <section id="katRepl">
+    <div id="highlight"></div>
+    <textarea id="source" spellcheck="false"></textarea>
+    <div id="log"></div>
+  </section>
+  <template id="hr"><hr></template>
+  <script src="js/machine.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/vm.js"></script>
+  <script src="js/repl.js"></script>
+  <script>
+var app = new $.Machine({ addr: "REPL" });
+$.targets({
+  load () {
+    repl.emit("init", app)
+  }
+});
+$.queries({
+  "#run": { click () { repl.emit("editorRun", new WebAssembly.Memory({ initial: 1, maximum: 1 })) } },
+  "#clear": { click () { $("#log").innerHTML = "" } },
+  "#source": {
+    input (e) { repl.emit("editorParse", e) },
+    select () { repl.emit("select") },
+    "blur click" () { if (this.selectionStart === this.selectionEnd) repl.emit("deselect") },
+    scroll () { $("#highlight").scrollTop = $("#source").scrollTop }
+  },
+  "#log": { "copy dragstart" (e) {
+    e[e.type === "copy" ? "clipboardData" : "dataTransfer"].setData("text/plain", document.getSelection().toString()
+      .replace(/\u200b|(→)|(λ)/g, ({}, $1, $2) => $1 ? "->" : $2 ? "\\" : ""));
+    e.type === "copy" && e.preventDefault()
+  } }
+})
+  </script>
+</body>
+</html>
