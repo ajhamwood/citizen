@@ -21,8 +21,8 @@ function VM (options = {}) {
       debug.groupEnd();
       return res
     } })[name] : fn.bind(self)
-  } }))(debug),
-  clone = o => Object.fromEntries(Object.entries(o).map(([k, v]) => ([k, v instanceof Array ? v.slice() :
+  } }))(debug);
+  const clone = o => Object.fromEntries(Object.entries(o).map(([k, v]) => ([k, v instanceof Array ? v.slice() :
     v instanceof Map ? new v.constructor(v) : v])));
 
   class Result {  // Error handling

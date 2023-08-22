@@ -1,19 +1,25 @@
+---------------
+-- Functions --
+---------------
+
 let id : {A} -> A -> A                                = \x. x;
 let const : {A B} -> A -> B -> A                      = \x _. x;
 let const2 : {A B} -> A -> B -> B                     = \_. id;
 let apply : {A B} -> A -> (A -> B) -> B               = \x f. f x;
 
-let dcomp : {A : U}{B : A -> U}{C : {x : A} -> B x -> U} ->
-            ({x : A}(y : B x) -> C {x} y) -> (g : (x : A) -> B x) ->
-            (x : A) -> C {x} (g x)
+let dcomp
+    : {A : U}{B : A -> U}{C : {x : A} -> B x -> U} ->
+      ({x : A}(y : B x) -> C {x} y) -> (g : (x : A) -> B x) ->
+      (x : A) -> C {x} (g x)
     = \f g x. f {x} (g x);
 let comp : {A B C : U} -> (B -> C) -> (A -> B) -> A -> C  = \f g x. f (g x);
 
-let dcomp2 : {A1 : U}{A2 : A1 -> U}{B : (x : A1) -> A2 x -> U}
-             {C : {x : A1}{y : A2 x} -> B x y -> U} ->
-             ({x : A1}{y : A2 x} -> (z : B x y) -> C {x}{y} z) ->
-             (g : (x : A1) -> (y : A2 x) -> B x y) ->
-             (x : A1) -> (y : A2 x) -> C {x}{y} (g x y)
+let dcomp2
+    : {A1 : U}{A2 : A1 -> U}{B : (x : A1) -> A2 x -> U}
+      {C : {x : A1}{y : A2 x} -> B x y -> U} ->
+      ({x : A1}{y : A2 x} -> (z : B x y) -> C {x}{y} z) ->
+      (g : (x : A1) -> (y : A2 x) -> B x y) ->
+      (x : A1) -> (y : A2 x) -> C {x}{y} (g x y)
     = \f g x y. f {x}{y} (g x y);
 let comp2 : {A1 A2 B C : U} -> (B -> C) -> (A1 -> A2 -> B) -> A1 -> A2 -> C
     = \f g x y. f (g x y);
@@ -52,6 +58,10 @@ let on : {A B C : U} -> (B -> B -> C) -> (A -> B) -> A -> A -> C
 let typeof : {A} -> A -> U                            = \{A} a. A;
 
 
+
+-----------------------------
+-- Non-dependent Datatypes --
+-----------------------------
 
 -- Void
 
@@ -98,8 +108,8 @@ let eqn : Nat -> Nat -> Bit                           = \m n. (diff m n) Bit (\_
 
 let foldnat : {A} -> (Nat -> A -> A) -> A -> Nat -> A
     = \{A} reducer base n. snd {Nat} (n (Pair Nat A)
-        (\p. pair (suc (fst p)) (p A (\m. reducer (suc m)))) (pair zero base));
-let fact : Nat -> Nat = \n. foldnat {Nat} mul (suc zero) n;
+        (\p. pair (suc (fst p)) (reducer (fst p) (snd p))) (pair zero base));
+let fact : Nat -> Nat = \n. foldnat {Nat} (\n. mul (suc n)) (suc zero) n;
 -- fact (suc (suc (suc zero)))
 
 
@@ -142,6 +152,10 @@ let cons : {A} -> A -> List A -> List A               = \a as L n c. c a (as L n
 let concat : {A} -> List A -> List A -> List A        = \{A} la lb. la (List A) lb cons;
 let length : {A} -> List A -> Nat                     = \l. l Nat zero (\_. suc);
 
+let foldlist : {A B} -> (List A -> A -> B -> B) -> B -> List A -> B
+    = \{A}{B} reducer base l. snd {Nat} (l (Pair Nat B) (pair nil base)
+        (\a p. pair (cons a (fst p)) (reducer (fst p) a (snd p))));
+
 let listHead : {A} -> List A -> A = \{A} l. l A _ (\a as. a);
 let listTail : {A} -> List A -> List A
     = \{A} l. snd (l (Pair (List A) (List A)) (pair nil nil)
@@ -164,11 +178,11 @@ let nelToList : {A} -> Nonempty A -> List A           = \{A} nl. nl (List A) (\a
 -- Trees
 
 let Tree : U -> U = \A. (T : U) -> (T -> T -> T) -> (A -> T) -> T -> T;
---let node : {A} -> Tree A -> Tree A -> Tree A = \ta tb T n l t. n (ta T n l t) (tb T n l t);
-let node : {A} -> Tree A -> Tree A -> Tree A
-    = \ta tb T n l t. ta T n (\a. tb T n (\b. n (l a) (l b)) (l a)) (tb T n l t);
-let leaf : {A} -> A -> Tree A = \a T n l t. l a;
 let tnil : {A} -> Tree A = \T n l t. t;
+let leaf : {A} -> A -> Tree A = \a T n l t. l a;
+let node : {A} -> Tree A -> Tree A -> Tree A = \ta tb T n l t. n (ta T n l t) (tb T n l t);
+--let node : {A} -> Tree A -> Tree A -> Tree A
+--    = \ta tb T n l t. ta T n (\a. tb T n (\b. n (l a) (l b)) (l a)) (tb T n l t);
 
 
 -- Continuations
@@ -181,9 +195,13 @@ let shift : {W A} -> ((A -> W) -> Cont W W) -> Cont W A = \e. cont (\k. reset (e
 
 
 
+-------------------------
+-- Dependent Datatypes --
+-------------------------
+
 -- Dependent Identity
 
-let DWrap : {T} -> T -> U                             = \{T} x. (W : T -> U) -> ((t : T) -> W t) -> W x;
+let DWrap : {T} -> T -> U                             = \{T} t. (W : T -> U) -> ((x : T) -> W x) -> W t;
 let dwrap : {T} -> (t : T) -> DWrap {T} t             = \{V} v W w. w v;
 let undwrap : {T t} -> DWrap {T} t -> T               = \{V}{v} w. w (\_. V) (\_. v);
 -- tt (DWrap tt) ((\t. tt (DWrap {Unit} t) (dwrap t)) tt)
@@ -199,14 +217,26 @@ let dadd : {m n} -> DNat {m} -> DNat {n} -> DNat {add m n}
     = \{n=n} a b DN s z. a (\k. DN (add k n)) s (b DN s z);
 --let dmul : {m n} -> DNat {m} -> DNat {n} -> DNat {mul m n}
 --    = \{m}{n=n} a b DN s z. a (\k. DN (mul k n)) (b (\k. DN _) s) z;
+let lowerDNat : {n} -> DNat {n} -> Nat                = \{n} _. n;
 
-let dfoldnat : {A : Nat -> U}{n} -> ({m} -> A m -> A (suc m)) -> A zero -> DNat {n} -> A n
-    = \{A} reducer base dn. proj2 {Nat}{A} (dn (\n. Sigma Nat A {n})
-        (\{m} s. dpair (suc m) (reducer {m} (proj2 s))) (dpair zero base));
+let dfoldnat
+    : {A : Nat -> U}{n} -> ({m} -> DNat {m} -> A m -> A (suc m)) -> A zero -> DNat {n} -> A n
+    = \{A} reducer base dn. snd (proj2 {Nat}{\n. Pair (DNat {n}) (A n)} (dn
+        (\n. Sigma Nat (\n. Pair (DNat {n}) (A n)) {n})
+        (\{m} s. dpair (suc m)
+          (pair (ds (fst (proj2 s))) (reducer (fst (proj2 s)) (snd (proj2 s)))))
+        (dpair zero (pair dz base))));
 
 let initWord : {n} -> DNat {n} -> LTree {n} Bit       = \dn. dn (\n. LTree {n} Bit) (\acc. node acc acc) (leaf O);
 -- initWord (ds (ds dz))
 
+-- Dependent Lists
+
+let DList : (A : U){l : List A} -> U
+    = \A {l}. (DL : List A -> U) -> DL nil -> ({as}(a : A) -> DL as -> DL (cons a as)) -> DL l;
+let dnil : {A} -> DList A {nil} = \DL n c. n;
+let dcons : {A as}(a : A) -> DList A {as} -> DList A {cons a as} = \a as DL n c. c a (as DL n c);
+let lowerDList : {A as} -> DList A {as} -> List A     = \{as=as} _. as;
 
 -- Dependent Maybe
 
@@ -214,8 +244,11 @@ let DMaybe : (A : U){ma} -> U
     = \A {ma}. (DM : Maybe A -> U) -> DM nothing -> ((a : A) -> DM (just a)) -> DM ma;
 let dnothing : {A} -> DMaybe A {nothing} = \DM n j. n;
 let djust : {A}(a : A) -> DMaybe A {just a} = \a DM n j. j a;
-let dmaybe : {A}{B : Maybe A -> U} -> B nothing -> ((a : A) -> B (just a)) ->
-             {ma : Maybe A} -> DMaybe A {ma} -> B ma
+let lowerDMaybe : {A ma} -> DMaybe A {ma} -> Maybe A = \{ma=ma} _. ma;
+
+let dmaybe
+    : {A}{B : Maybe A -> U} -> B nothing -> ((a : A) -> B (just a)) ->
+      {ma : Maybe A} -> DMaybe A {ma} -> B ma
     = \{B=B} b f dma. dma B b f;
 --dmaybe {Nat}{\mn. mn U Unit (\n. Fin {suc n})} tt (\v. fz {v}) (djust (suc zero))
 --proj2 {Maybe Nat}{\mn. mn U Unit (\n. Fin {suc n})} (dpair (just (suc zero)) fz)
@@ -228,8 +261,8 @@ let Fin : {n} -> U
 let fz : {n} -> Fin {suc n}                           = \F s z. z;
 let fs : {n} -> Fin {n} -> Fin {suc n}                = \f F s z. s (f F s z);
 
-let foldfin : {A : Nat -> U}{n} ->
-              ({m} -> A m -> A (suc m)) -> ({m} -> A (suc m)) -> Fin {n} -> A n
+let foldfin
+    : {A : Nat -> U}{n} -> ({m} -> A m -> A (suc m)) -> ({m} -> A (suc m)) -> Fin {n} -> A n
     = \{A}{n} reducer base fn. proj2 {Nat}{A} (fn (\n. Sigma Nat A {n})
         (\{m} s. dpair (suc m) (reducer {m} (proj2 s))) (\{m}. dpair (suc m) base));
 --foldfin {\_. Nat} suc zero (fz {suc zero})
@@ -247,8 +280,8 @@ let tail : {A n} -> Vec {suc n} A -> Vec {n} A        = \{A}{n} v. v (\_. Vec {n
 let vconcat : {A m n} -> Vec {m} A -> Vec {n} A -> Vec {add m n} A
     = \{A}{n=n} v1 v2. v1 (\m. Vec {add m n} A) v2 vcons;
 
-let foldvec : {A}{B : Nat -> U}{n} ->
-              ({m} -> A -> B m -> B (suc m)) -> B zero -> Vec {n} A -> B n
+let foldvec
+    : {A}{B : Nat -> U}{n} -> ({m} -> A -> B m -> B (suc m)) -> B zero -> Vec {n} A -> B n
     = \{A}{B}{n} reducer base v. proj2 {Nat}{B} (v (\n. Sigma Nat B {n}) (dpair zero base)
         (\{m} a s. dpair (suc m) (reducer {m} a (proj2 s))));
 {-foldvec {Bit}{\n. Fin {suc n}}
@@ -273,6 +306,15 @@ let cmpBitVec : {n} -> Vec {n} Bit -> Vec {n} Bit -> Bit
     = \{n} v1 v2. v1 (\_. Bit) I (\{m} a acc. and acc (xnor a (lookup {m=n} m v2)));
 
 
+-- Tuples
+
+let Tuple : List U -> U
+    = \L. (T : List U -> U) -> T nil -> ({A As} -> A -> T As -> T (cons A As)) -> T L;
+let tupnil : Tuple nil = \T n c. n;
+let tupcons : {A As} -> A -> Tuple As -> Tuple (cons A As) = \a tas T n c. c a (tas T n c);
+--tupcons {Nat}{cons Bit nil} zero (tupcons I tupnil)
+
+
 -- Height-indexed Binary Leaf-only Trees
 
 let LTree : {n} -> U -> U
@@ -285,8 +327,8 @@ let rbranch : {A n} -> LTree {suc n} A -> LTree {n} A = \{A}{n} t. t (\_. LTree 
 -- divine (leaf O)
 -- lbranch (node (leaf O) (leaf I))
 
-let foldltree : {A}{B : Nat -> U}{n} ->
-                ({m} -> B m -> B m -> B (suc m)) -> (A -> B zero) -> LTree {n} A -> B n
+let foldltree
+    : {A}{B : Nat -> U}{n} -> ({m} -> B m -> B m -> B (suc m)) -> (A -> B zero) -> LTree {n} A -> B n
     =\{A}{B}{n} reducer base tr. proj2 {Nat}{B} (tr
         (\n. Sigma Nat B {n}) (\a. dpair zero (base a))
         (\{m} s1 s2. dpair (suc m) (reducer {m} (proj2 s1) (proj2 s2))));
@@ -326,6 +368,10 @@ let somebush : Bush Bit
 
 
 
+---------------------------
+-- Non-dependent Records --
+---------------------------
+
 -- Monoid Structure
 
 let RawMonoid : U -> U
@@ -336,6 +382,7 @@ let treeMonoid : {T} -> RawMonoid (Tree T)            = \{T} _ M. M node tnil;
 let listMonoid : {T} -> RawMonoid (List T)            = \{T} _ M. M concat nil;
 --listMonoid (List Bit) (\comb neut. comb (cons I nil) neut)
 
+-- Dependent...
 let RawIndexedMonoid : {I}{monoid : RawMonoid I}(C : I -> U) -> U
     = \{I}{monoid} C. monoid U (\comb neut. {x}(M : I -> U) ->
         ((icomb : {i j} -> C i -> C j -> C (comb i j))(ineut :  C neut) -> M x) -> M x);
@@ -355,6 +402,7 @@ let foldableTree : Foldable Tree
 let bitToNat : Bit -> Nat = \b. b Nat (suc zero) zero;
 --foldableTree Nat (\foldMap. foldMap {monoid=natMonoid} bitToNat
 --    (node (leaf I) (node tnil (leaf I))))
+
 
 -- Functors
 
@@ -392,7 +440,7 @@ let appComp : {F G : U -> U} -> App F -> App G -> App (\X. F (G X))
     = \{F}{G} appF appG A. A
         (\{X} fgx. appF {G X} (\pureF apF. pureF (appG {X} (\pureG apG. pureG fgx))))
         (\{X}{Y} fgf fgx. appF (\pureF apF. apF (apF {G (X -> Y)}{G X -> G Y}
-            (pureF (\gf gx. appG (\pureG apG. apG gf gx))) fgf) fgx));
+          (pureF (\gf gx. appG (\pureG apG. apG gf gx))) fgf) fgx));
 -- (appComp listApp listApp) (\pure ap. ap
 --     (cons (cons not nil) (cons (cons (\x. x) nil) nil))
 --     (cons (cons O (cons I nil)) (cons (cons I nil) nil)))
@@ -413,7 +461,7 @@ let monadApp : {F} -> Monad F -> App F
 let mapM : {A B}{M : U -> U}{monad : Monad M} -> (A -> M B) -> List A -> M (List B)
     = (\{A}{B}{M}{monad} f as. monad
         (\return bind. as (M (List B)) (return nil)
-            (\a r. bind {B}{List B} (f a) (\x. bind {List B}{List B} r (\xs. return (cons x xs))))));
+          (\a r. bind {B}{List B} (f a) (\x. bind {List B}{List B} r (\xs. return (cons x xs))))));
 -- run {List Bit} (mapM {monad=contMonad} (\b. cont (\k. k (not b))) (cons I (cons O nil))) (\x. x)
 
 
@@ -449,6 +497,10 @@ let mapM : {F}{trav : Trav F}{M}{monad : Monad M}{B A} -> (A -> M B) -> F A -> M
 
 
 
+---------------
+-- Reasoning --
+---------------
+
 -- Leibniz Equality
 
 let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> P x -> P y;
@@ -459,9 +511,13 @@ let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (
 let cong2 : {A B C x y u v}(op : A -> B -> C) -> Eq x y -> Eq {B} u v -> Eq {C} (op x u) (op y v)
     = \{y=y}{u=u} op xy uv P pxuyv. uv (\u. P (op y u)) (xy (\x. P (op x u)) pxuyv);
 let subst : {T}{x y : T}(P : T -> U) -> Eq x y -> P x -> P y = \P xy. xy P;
-let step : {A}(x : A){y z} -> Eq {A} y z -> Eq {A} x y -> Eq {A} x z = \_. trans;
+
+let step : {A}(x : A){y : A} -> Eq x y -> Eq {A} x y  = \_ xy. xy;
+let stepAs : {A}(x : A){y z : A} -> Eq x y -> Eq y z -> Eq {A} x z = \_ xy yz. trans yz xy;
+let qed : {A}(x : A) -> Eq {A} x x                    = \_. refl;
 
 let EqIsEquiv : {T} -> IsEquivalence {T} Eq           = \E. E refl sym trans;
+--EqIsEquiv {E = {x} -> Eq {Bit} x x} (\refl sym trans. refl)
 let EqSetoid : {T} -> Setoid {T}                      = \S. S Eq (\E. E refl sym trans);
 -- EqSetoid {Nat} (\Rel isEquiv. isEquiv (\refl sym trans. refl))
 
@@ -535,8 +591,8 @@ let IsDecEquivalence : {A} -> (A -> A -> U) -> U
     = \{A} Rel. {D} -> ((DecRel : Decidable {A}{A} Rel)(isEquiv : IsEquivalence {A} Rel) -> D) -> D;
 let decidable : {A B}(f : B -> A)(Rel : A -> A -> U) -> Decidable Rel -> Decidable (on Rel f)
     = \f _ dec x y. dec (f x) (f y);
-let isDecEquivalence : {A B}(f : B -> A)(Rel : A -> A -> U) ->
-                       IsDecEquivalence Rel -> IsDecEquivalence (on Rel f)
+let isDecEquivalence
+    : {A B}(f : B -> A)(Rel : A -> A -> U) -> IsDecEquivalence Rel -> IsDecEquivalence (on Rel f)
     = \f Rel deq DE. deq (\DecRel isEquiv. DE (decidable f Rel DecRel) (isEquivalence f Rel isEquiv));
 
 
@@ -598,14 +654,10 @@ let IdemCommMonoid : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
         ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isIdemCommMonoid : IsIdemCommMonoid {C} rel op e) -> ICM rel op e) -> ICM Rel Op E;
 
 
-let TreeIsMagma : {T} -> IsMagma {Tree T} Eq node     = \IsM. IsM EqIsEquiv (cong2 node);
-let TreeMagma : {T} -> Magma {Tree T} = \{T} M. M {Tree T}{Eq {Tree T}}{node} TreeIsMagma;
---TreeMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
 
-let TreeIsUnitalMagma : {T} -> IsUnitalMagma {Tree T} Eq node tnil = \IsUM. IsUM TreeIsMagma (pair refl refl);
-let TreeUnitalMagma : {T} -> UnitalMagma {Tree T} = \{T} UM. UM {Tree T}{Eq {Tree T}}{node}{tnil} TreeIsUnitalMagma;
---TreeUnitalMagma {Bit} (\IsUM. IsUM (\IsM Iden. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl))))
-
+-----------------------
+-- Dependent Records --
+-----------------------
 
 -- Dependent Sums
 
@@ -617,8 +669,8 @@ let proj1 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> A
     = \{A} s. s (\_. A) (\fst snd. fst);
 let proj2 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> B a
     = \{B=B} s. s B (\fst snd. snd);
-let smap : {A B}{P : A -> U}{Q : B -> U}(f : A -> B) ->
-           ({x} -> P x -> Q (f x)) -> Sigma A P -> Sigma B Q
+let smap
+    : {A B}{P : A -> U}{Q : B -> U}(f : A -> B) -> ({x} -> P x -> Q (f x)) -> Sigma A P -> Sigma B Q
     =\{B=B}{Q=Q} f g s. s (\b. Sigma B Q) (\x y. dpair (f x) (g y));
 
 
@@ -655,3 +707,64 @@ let AllC : (C : Container){X}(P : X -> U)(cx : cextend C X) -> U
     = \C P cx. {A} -> ((proof : {p} -> P (proj2 cx p)) -> A) -> A;
 let AnyC : (C : Container){X}(P : X -> U)(cx : cextend C X) -> U
     = \C P cx. {A} -> ((proof : Sigma _ (\p. P (proj2 cx p))) -> A) -> A;
+
+
+
+-----------------
+-- Some proofs --
+-----------------
+
+-- Concat on list is a monoid
+
+let ListIsMagma : {T} -> IsMagma {List T} Eq concat   = \IsM. IsM EqIsEquiv (cong2 concat);
+let ListMagma : {T} -> Magma {List T} = \{T} M. M {List T}{Eq {List T}}{concat} ListIsMagma;
+
+let concatRightIden : {A}{xs : List A}{dxs : DList A {xs}} -> Eq {List A} (concat xs nil) xs
+    = \{A}{xs}{dxs}. dxs
+        (\xs. Eq {List A} (concat xs nil) xs) refl (\a. cong (cons a));
+let ListIsUnitalMagma : {T} -> IsUnitalMagma {List T} Eq concat nil = \IsUM. IsUM ListIsMagma (pair refl (\{xs}. concatRightIden {xs=xs}));
+let ListUnitalMagma : {T} -> UnitalMagma {List T}     = \{T} UM. UM {List T}{Eq {List T}}{concat}{nil} ListIsUnitalMagma;
+
+let concatAssoc
+    : {A}{xs ys zs : List A}{dxs : DList A {xs}} ->
+        Eq {List A} (concat (concat xs ys) zs) (concat xs (concat ys zs))
+    = \{A}{xs}{ys}{zs}{dxs}. dxs
+        (\xs. Eq {List A} (concat (concat xs ys) zs) (concat xs (concat ys zs)))
+        refl (\a. cong (cons a));
+let ListIsMonoid : {T} -> IsMonoid {List T} Eq concat nil = \IsUM. IsUM ListIsUnitalMagma (\{xs}. concatAssoc {xs=xs});
+let ListMonoid : {T} -> Monoid {List T}               = \{T} M. M {List T}{Eq {List T}}{concat}{nil} ListIsMonoid;
+--ListMonoid {Bit} (\IsMon. IsMon (\IsUMag Assoc. IsUMag (\IsMag Iden. IsMag (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))))
+
+
+-- Addition on Nat is a commutative monoid
+
+let NatAddIsMagma : IsMagma Eq add = \IsM. IsM EqIsEquiv (cong2 add);
+let NatAddMagma : Magma {Nat} = \M. M {Nat}{Eq {Nat}}{add} NatAddIsMagma;
+--NatAddMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
+
+let addRightIden : {n : Nat}{dn : DNat {n}} -> Eq {Nat} (add n zero) n
+    = \{n}{dn}. dn (\n. Eq {Nat} (add n zero) n) (cong suc) refl;
+let NatAddIsUnitalMagma : IsUnitalMagma {Nat} Eq add zero = \IsUM. IsUM NatAddIsMagma (pair refl addRightIden);
+let NatAddUnitalMagma : UnitalMagma {Nat} = \UM. UM {Nat}{Eq {Nat}}{add}{zero} NatAddIsUnitalMagma;
+--NatAddUnitalMagma  (\IsUM. IsUM (\IsM Iden. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans.refl))))
+
+let addAssoc : {m n p : Nat}{dm : DNat {m}} -> Eq {Nat} (add (add m n) p) (add m (add n p))
+    = \ {m}{n}{p}{dm}. dm (\m. Eq {Nat} (add (add m n) p) (add m (add n p))) (cong suc) refl;
+let NatAddIsMonoid : IsMonoid {Nat} Eq add zero = \IsUMag. IsUMag NatAddIsUnitalMagma (\{x}{y}{z}. addAssoc {x}{y}{z});
+let NatAddMonoid : Monoid {Nat} = \M. M {Nat}{Eq {Nat}}{add}{zero} NatAddIsMonoid;
+--NatAddMonoid (\IsMon. IsMon (\IsUMag Assoc. IsUMag (\IsMag Iden. IsMag (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))))
+
+let addSuc : (m n : Nat){dm : DNat {m}} -> Eq (add m (suc n)) (suc (add m n))
+    = \m n {dm}. dm (\m. Eq (add m (suc n)) (suc (add m n))) (cong suc) refl;
+let addCommSuc
+    : {k}(n : Nat){dn : DNat {n}} -> Eq (add n k) (add k n) ->
+        Eq (add n (suc k)) (add (suc k) n)
+    = \{k} n {dn} acc.
+         stepAs (add n (suc k)) (addSuc n k {dn})
+        (stepAs (suc (add n k)) (cong suc acc)
+        (qed (add (suc k) n)));
+let addComm : {m n : Nat}{dm : DNat {m}}{dn : DNat {n}} -> Eq (add m n) (add n m)
+    = \{m}{n}{dm}{dn}. dn (\n. Eq {Nat} (add m n) (add n m)) (addCommSuc m {dm}) (addRightIden {m}{dm});
+let NatAddIsCommMonoid : IsCommMonoid {Nat} Eq add zero = \IsMon. IsMon NatAddIsMonoid (\{x}{y}. addComm {x}{y});
+let NatAddCommMonoid : CommMonoid {Nat} = \CM. CM {Nat}{Eq {Nat}}{add}{zero} NatAddIsCommMonoid;
+--NatAddCommMonoid (\IsCM. IsCM (\IsMon Comm. IsMon (\IsUMag Assoc. IsUMag (\IsMag Iden. IsMag (\IsEquiv opcong. IsEquiv (\refl sym trans. refl))))))

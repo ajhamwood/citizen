@@ -629,16 +629,6 @@ fact (suc (suc (suc zero)))
 
 
 
-let addSucZero : {n} -> Eq (add zero (suc n)) (suc (add zero n))
-    = refl;
-let addSucSuc : {k n} -> Eq (add k (suc n)) (suc (add k n)) -> Eq (add (suc k) (suc n)) (suc (add (suc k) n))
-    = cong suc;
-let addSuc : {m n} -> Eq (add m (suc n)) (suc (add m n))
-    = \{m}{n} P pt. m _ addSucSuc addSucZero;
-addSuc
-
-
-
 
 let cmExtend : {Sh1 Sh2}{cmS : Sh1 -> Sh2}{C1 : Container {Sh1}}{C2 : Container {Sh2}}{X} ->
                CMorphism {Sh1}{Sh2}{cmS} C1 C2 -> cextend {Sh1} C1 X -> cextend {Sh2} C2 X
@@ -761,5 +751,27 @@ let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (
 
 
 
-let concatNilIsAssoc : {T ys zs} -> Associative {List T} Eq concat = \{T}{ys}{zs}. trans {List T} (concat nil (concat ys zs) (trans {List T} (concat ys zs) (concat (concat nil ys) zs)));
-concatNilIsAssoc
+-- Trees
+
+let Tree : U -> U = \A. (T : U) -> (T -> T -> T) -> (A -> T) -> T -> T;
+let tnil : {A} -> Tree A = \T n l t. t;
+let leaf : {A} -> A -> Tree A = \a T n l t. l a;
+--let node : {A} -> Tree A -> Tree A -> Tree A
+--    = \ta tb T n l t. ta T n (\a. tb T n (\b. n (l a) (l b)) (l a)) (tb T n l t);
+let node : {A} -> Tree A -> Tree A -> Tree A = \ta tb T n l t. n (ta T n l t) (tb T n l t);
+let norm : {A} -> Tree A -> Tree A
+    = \{A} tr. tr (Tree A) (\ta tb. ta (Tree A)
+        (\al ar. tb (Tree A) (\bl br. node (node al ar) (node bl br))
+            (\b. node (node al ar) (leaf b)) (node al ar))
+        (\a. tb (Tree A) (\bl br. node (leaf a) (node bl br))
+            (\b. node (leaf a) (leaf b)) (leaf a)) tb) leaf tnil;
+
+norm (node (node (leaf zero) (leaf (suc zero))) (node (leaf (suc (suc zero))) tnil))
+
+let TreeIsMagma : {T} -> IsMagma {Tree T} Eq node     = \IsM. IsM EqIsEquiv (cong2 node);
+let TreeMagma : {T} -> Magma {Tree T} = \{T} M. M {Tree T}{Eq {Tree T}}{node} TreeIsMagma;
+--TreeMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
+
+let TreeIsUnitalMagma : {T} -> IsUnitalMagma {Tree T} Eq node tnil = \IsUM. IsUM TreeIsMagma (pair refl refl);
+let TreeUnitalMagma : {T} -> UnitalMagma {Tree T} = \{T} UM. UM {Tree T}{Eq {Tree T}}{node}{tnil} TreeIsUnitalMagma;
+--TreeUnitalMagma {Bit} (\IsUM. IsUM (\IsM Iden. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl))))
