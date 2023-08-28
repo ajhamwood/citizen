@@ -740,7 +740,7 @@ let arithAlg : Algebra Arith = _;
 let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> ((refl : {Z z}{Q : Z -> U} -> Q z -> Q z) -> P x -> P y) -> P x -> P y;
 let refl : {T t} -> Eq {T} t t                        = \_ E. E (\refl. refl);
 let trans : {T}{x y z : T} -> Eq y z -> Eq x y -> Eq {T} x z
-    = \yz xy P E. E (\refl. refl );
+    = \yz xy P E. E (\refl. refl);
 let sym : {T}{x y : T} -> Eq x y -> Eq {T} y x        = \{T}{x} xy P. xy (\z. P z -> P x) (refl {T} P);
 let cong : {A B x y}(f : A -> B) -> Eq x y -> Eq {B} (f x) (f y) = \f xy P. xy (\x. P (f x));
 
@@ -775,3 +775,144 @@ let TreeMagma : {T} -> Magma {Tree T} = \{T} M. M {Tree T}{Eq {Tree T}}{node} Tr
 let TreeIsUnitalMagma : {T} -> IsUnitalMagma {Tree T} Eq node tnil = \IsUM. IsUM TreeIsMagma (pair refl refl);
 let TreeUnitalMagma : {T} -> UnitalMagma {Tree T} = \{T} UM. UM {Tree T}{Eq {Tree T}}{node}{tnil} TreeIsUnitalMagma;
 --TreeUnitalMagma {Bit} (\IsUM. IsUM (\IsM Iden. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl))))
+
+
+let foldvec
+    : {A}{S : U -> U}{Z : U}{n} -> ({B m} -> Vec {m} A -> A -> B -> S B) -> Z -> Vec {n} A -> n U S Z
+    = \{A}{B} reducer base v. snd (proj2 {Nat}{\n. Pair (Vec {n} A) (n U S Z)} (v
+        (\n. Sigma Nat (\n. Pair (Vec {n} A) (n U S Z)) {n})
+        (dpair zero (pair vnil base))
+        (\{m} a s. dpair (suc m)
+          (pair (vcons a (fst (proj2 s))) (reducer (fst (proj2 s)) a (snd (proj2 s)))))));
+
+let foldnat : {A} -> (Nat -> A -> A) -> A -> Nat -> A
+    = \{A} reducer base n. snd {Nat} (n (Pair Nat A)
+        (\p. pair (suc (fst p)) (reducer (fst p) (snd p))) (pair zero base));
+let pred : Nat -> Nat = foldnat const zero;
+foldvec {Bit}{\n. Vec {pred n} Bit} (\{m} v _ _. v) vnil (vcons I (vcons O vnil))
+
+
+
+let dfoldnat
+    : {S : Nat -> U -> U}{Z : U}{n} -> ({A m} -> DNat {m} -> A -> S m A) -> Z -> DNat {n} -> foldnat {U} S Z n
+    = \{S}{Z}{n} reducer base dn. snd (proj2
+        {Pair Nat U}{\p. Pair (DNat {fst p}) (snd p)}{pair n (foldnat {U} S Z n)} (dn
+          (\n. Sigma (Pair Nat U) (\p. Pair (DNat {fst p}) (snd p)) {pair n (foldnat {U} S Z n)})
+          (\{m} s. dpair {Pair Nat U} {\p. Pair (DNat {fst p}) (snd p)}
+            (pair {Nat}{U} (suc m) (foldnat {U} S Z (suc m)))
+            (pair {DNat {suc m}}{foldnat {U} S Z (suc m)}
+              (ds (fst (proj2 s)))
+              (reducer {foldnat {U} S Z m}
+                {fst (m (Pair Nat U) (\p. pair (suc (fst p)) (S (fst p) (snd p))) (pair zero Z))}
+                (fst {DNat {fst (m (Pair Nat U) (\p. pair (suc (fst p)) (S (fst p) (snd p))) (pair zero Z))}}
+                  (proj2 {Pair Nat U}{\p. Pair (DNat {fst p}) (snd p)}{pair (fst (m (Pair Nat U) (\p. pair (suc (fst p)) (S (fst p) (snd p)))) (pair zero Z)) (foldnat {U} S Z m)} s))
+                  (snd (proj2 s)))))
+          (dpair (pair zero Z) (pair dz base))));
+
+--dfoldnat {\_ _. Vec {zero} Bit}{Vec {zero} Bit}{Nat}{suc (suc zero)} (\dn a. vnil) vnil (ds (ds dz))
+--snd (n (Pair Nat U) (\p. pair (suc (fst p)) (S (fst p) (snd p))) (pair zero Z))
+foldnat {U} (\n _. DNat {n}) (DNat {zero}) (suc (suc zero))
+
+
+
+let dfoldnat
+    : {S : Nat -> U -> U}{Z : U}{n} -> ({A m} -> DNat {m} -> A -> S m A) -> Z -> DNat {n} -> foldnat {U} S Z n
+    = \{S}{Z}{n} reducer base dn. snd (proj2
+        {Pair Nat U}{\p. Pair (DNat {fst p}) (snd p)}{pair n (foldnat {U} S Z n)} (dn
+          (\n. Sigma (Pair Nat U) (\p. Pair (DNat {fst p}) (snd p)) {pair n (foldnat {U} S Z n)})
+          (\{m} s. dpair {Pair Nat U} {\p. Pair (DNat {fst p}) (snd p)}
+            (pair {Nat}{U} (suc m) (foldnat {U} S Z (suc m)))
+            (pair {DNat {suc m}}{foldnat {U} S Z (suc m)}
+              (ds (fst (proj2 s)))
+              (reducer {foldnat {U} S Z m}{m} (fst (proj2 s)) (snd (proj2 s)))))
+          (dpair (pair zero Z) (pair dz base))));
+
+
+let dfoldnat
+    : {A : Nat -> U}{S : Nat -> U -> U}{Z : U}{n} ->
+        ({m} -> DNat {m} -> A m -> S m (A m)) -> Z -> DNat {n} -> foldnat {U} S Z n
+    = \{A}{S}{Z}{n} reducer base dn. snd (proj2 {Nat}{\n. Pair (DNat {n}) (foldnat {U} S Z n)}{n} (dn
+          (\n. Sigma Nat (\n. Pair (DNat {n}) (foldnat {U} S Z n)) {n})
+          (\{m} s. dpair {Nat}{\n. Pair (DNat {n}) (foldnat {U} S Z n)} (suc m)
+            (pair {DNat {suc m}}{S m (A m)}
+              (ds {m} (fst (proj2 s)))
+              (reducer {m} (fst (proj2 s)) (snd (proj2 s)))))
+          (dpair (zero) (pair dz base))));
+dfoldnat
+
+
+
+(\(S : Nat -> U -> U)(Z : U)(n : Nat)(A : Nat -> U)
+  (reducer : {m} -> DNat {m} -> A m -> S m (A m))(base : Z)(dn : DNat {n})
+  (s : Sigma Nat (\n. Pair (DNat {n}) (A n)) {n}).
+    reducer (fst (proj2 s)) (snd (proj2 s)))
+  (\n _. Fin {suc (suc n)}) (Fin {suc zero}) zero (\n. Fin {suc n})
+  (\{m} _ (fn : Fin {suc m}). fs {suc m} fn) fz (dz)
+  (dpair {Nat}{\n. Pair (DNat {n}) (Fin {suc n})}
+    (zero) (pair dz fz))
+
+(\(S : Nat -> U -> U)(Z : U)(n : Nat)(A : Nat -> U)(base : Z)(dn : DNat {n}).
+  subst (const U) (tt (Eq {U}
+    (snd (n (Pair Nat U) (\p. pair (suc (fst p)) (S (fst p) (snd p))) (pair zero Z)))
+    (foldnat S Z n)) refl) (snd (n (Pair Nat U) (\p. pair (suc (fst p)) (S (fst p) (snd p))) (pair zero Z))))
+  (\n _. Fin {suc (suc n)}) (Fin {suc zero}) (suc zero) (\n. Fin {suc n})
+  fz (ds dz)
+
+
+
+
+let test
+    : (A : Nat -> U)(S : Nat -> U -> U)(Z : U)(n : Nat)
+        (reducer : {m} -> DNat {m} -> A m -> S m (A m))(base : Z)(dn : DNat {n}) ->
+        Sigma Nat (\n. Pair (DNat {n}) (foldnat {U} S Z n)) {n}
+    = \A S Z n reducer base dn s. dn
+        (\n. Sigma Nat (\n. Pair (DNat {n}) (foldnat {U} S Z n)) {n})
+        (\{m} s. dpair {Nat}{\n. Pair (DNat {n}) (foldnat {U} S Z n)} (suc m)
+          (pair {DNat {suc m}}{foldnat {U} S Z (suc m)}
+            (ds (fst {DNat {m}} (proj2 {Nat} s)))
+            (reducer {m}
+              (fst {DNat {m}} (proj2 {Nat} s))
+              (snd {DNat {m}} (proj2 {Nat} s)))))
+        (dpair {Nat} zero (pair dz base));
+test
+  (\n. Fin {suc n}) (\n _. Fin {suc (suc n)}) (Fin {suc zero}) zero
+  (\{m} _ (fn : Fin {suc m}). fs {suc m} fn) fz (dz)
+  (dpair {Nat}{\n. Pair (DNat {n}) (Fin {suc n})}
+    (zero) (pair dz fz))
+
+(\(S : Nat -> U -> U)(n : Nat)(A : Nat -> U)
+  (reducer : {m} -> DNat {m} -> S m (A m) -> S (suc m) (A (suc m)))(base : S zero (A zero))(dn : DNat {n}). snd (proj2 {Nat}{\n. Pair (DNat {n}) (S n (A n))}{n} (dn
+    (\n. Sigma Nat (\n. Pair (DNat {n}) (S n (A n))) {n})
+    (\{m} s. dpair {Nat}{\n. Pair (DNat {n}) (S n (A n))} (suc m)
+      (pair {DNat {suc m}}{S (suc m) (A (suc m))} (ds (fst (proj2 s)))
+        (reducer (fst (proj2 s)) (snd (proj2 s)))))
+    (dpair zero (pair dz base)))))
+  (\n _. Fin {suc n}) zero (\n. Fin {suc n})
+  (\{m} _ (fn : Fin {suc m}). fs {suc m} fn) fz (dz)
+
+
+
+let dfoldnat
+    : {n}(S : Nat -> U -> U)(A : Nat -> U) ->
+      ({m} -> DNat {m} -> S m (A m) -> S (suc m) (A (suc m))) -> S zero (A zero) -> DNat {n} -> S n (A n)
+    = \{n} S A reducer base dn. snd (proj2 {Nat}{\n. Pair (DNat {n}) (S n (A n))}{n} (dn
+    (\n. Sigma Nat (\n. Pair (DNat {n}) (S n (A n))) {n})
+    (\{m} s. dpair {Nat}{\n. Pair (DNat {n}) (S n (A n))} (suc m)
+      (pair {DNat {suc m}}{S (suc m) (A (suc m))} (ds (fst (proj2 s)))
+        (reducer (fst (proj2 s)) (snd (proj2 s)))))
+    (dpair zero (pair dz base))));
+dfoldnat (\m _. DNat {m}) (\m. DNat {m})
+  (\{m} dn _. dn) dz (ds (ds dz))
+
+
+
+(\{n : Nat}(S : Nat -> U -> U)(A : Nat -> U){m : Nat}(f : Nat -> Nat -> Nat)
+  (reducer : {p q} -> DNat {p} -> S q (A p) -> S (f q p) (A (suc p)))(base : S m (A zero))(dn : DNat {n}).
+  snd (proj2 {Nat}{\n. Pair (DNat {n}) (S (foldnat f m n) (A n))}{n} (dn
+    (\n. Sigma Nat (\n. Pair (DNat {n}) (S (foldnat f m n) (A n))) {n})
+    (\{k} s. dpair {Nat}{\n. Pair (DNat {n}) (S (foldnat f m n) (A n))} (suc k)
+      (pair {DNat {suc k}}{S (foldnat f m (suc k)) (A (suc k))} (ds (fst (proj2 s)))
+        (reducer {k}{foldnat f m k} (fst (proj2 s)) (snd (proj2 s)))))
+    (dpair zero (pair dz base)))))
+  (\m _. DNat {m}) (\m. DNat {m}) const
+  (\{m} dn _. dn) dz (ds (ds dz))

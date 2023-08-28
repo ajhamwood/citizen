@@ -131,7 +131,7 @@ class Parser {  // Rewrite as a bifunctor on state + fail?
 
   static any ({ source, highlight, offset, pos: [row, col], data }) { return new Result((ok, err) => source.length <= offset ?
     err({ source, highlight, offset, pos: [row, col], data, fail: "_Any char" }) :
-    (highlight.labelling = highlight.labelling.substring(0, offset) + (Parser.labels.findIndex(x => x === highlight.label) ?? "x") + highlight.labelling.substring(offset + 1),
+    (highlight.labelling = highlight.labelling.substring(0, offset) + Parser.labels.findIndex(x => x === highlight.label) + highlight.labelling.substring(offset + 1),
       ok({ source, highlight, offset: offset + 1, pos: /\r\n?|\n/g.test(source[offset]) ?
       [row + 1, 1] : [row, col + 1], data: source[offset] }))) }
   static eof ({ source, highlight, offset, pos, data }) { return new Result((ok, err) => source.length > offset ?

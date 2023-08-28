@@ -522,7 +522,7 @@ $.queries({
   },
   "#log": { "copy dragstart" (e) {
     e[e.type === "copy" ? "clipboardData" : "dataTransfer"].setData("text/plain", document.getSelection().toString()
-      .replace(/\u200b|(→)|(λ)/g, ({}, $1, $2) => $1 ? "->" : $2 ? "\\" : ""));
+      .replace(/\u200b|(→)|(λ )/g, ({}, $1, $2) => $1 ? "->" : $2 ? "\\" : ""));
     e.type === "copy" && e.preventDefault()
   } }
 });

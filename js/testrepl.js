@@ -1,7 +1,7 @@
 var repl = new $.Machine({
-      app : null,
-      isPortrait : null,
-      TC: null, debounce: null, debounceTime: 500, selectEnd: null,
+      app : null, isPortrait : null,
+      TCWorker: new Worker("js/vmworker.js"),
+      TC: null, debounce: null, debounceTime: 800, selectEnd: null,
       history: { past: [], cur: { code: $("#source").value, highlight: localStorage.getItem("replHighlight") }, future: [] },
       syntaxLabels: [ "ws", "encl", "ident", "atom", "piBinder", "pi", "lamBinder", "lam", "nameImpl", "let" ]
     });
@@ -10,16 +10,38 @@ $.targets({
   repl: {
     init (app) {
       this.app = app;
-      $("#source").style.height = getComputedStyle($("#source")).getPropertyValue("height");
-      $("#source").style.width = getComputedStyle($("#source")).getPropertyValue("width");
-      this.isPortrait = $("body").clientWidth / $("body").clientHeight > 3/2;
+      $.targets({ message (e) {
+        if ("highlight" in e.data) repl.emit("resp_parse", e.data);
+        else if ("result" in e.data) repl.emit("resp_elab", e.data)
+      } }, this.TCWorker);
+      this.TCWorker.postMessage({ type: "init" });
+
+      const highlightEl = $("#highlight"), sourceEl = $("#source"), bodyEl = $("body");
+      sourceEl.style.height = getComputedStyle(sourceEl).getPropertyValue("height");
+      sourceEl.style.width = getComputedStyle(sourceEl).getPropertyValue("width");
+      this.isPortrait = bodyEl.clientWidth / bodyEl.clientHeight > 3/2;
       const resizeObs = new ResizeObserver(() => repl.emit('resize'));
-      resizeObs.observe($("#source"));
-      resizeObs.observe($("body"));
-      repl.emit("editorParse")
+      resizeObs.observe(sourceEl);
+      resizeObs.observe(bodyEl);
+      repl.emit("editorParse");
+
+      // repeated code
+      const span = document.createElement("span");
+      span.dataset.label = "ws";
+      span.innerText = sourceEl.value;
+      highlightEl.innerHTML = "";
+      highlightEl.append(span);
+    },
+    async vmWait (type, data) {
+      const { transfer } = data, result = await new Promise(ok => {
+        repl.on(`resp_${type}`, ok);
+        this.TCWorker.postMessage({ type, ...data }, transfer)
+      });
+      tell.debug.call(this, "returning from", type, result);
+      repl.stop(`resp_${type}`);
+      return result
     },
 
-    // BUG: undo breaks highlighting
     // TODO: focus source -> show cursor line/column numbers in bottom right, select -> show range
     // TODO: select -> type "(" or "{" -> enclosure
     editorParse (e) { // Doesn't capture insertReplacementText input events
@@ -27,21 +49,23 @@ $.targets({
             highlightEl = $("#highlight"), sourceEl = $("#source");
       clearTimeout(this.debounce);
       this.debounce = setTimeout(async () => {  // disable/enable run
-        let source = sourceEl.value, err;
+        const source = sourceEl.value;
+        let err;
         try {
-          const { highlight, returnAll } = await VM().import({ code: sourceEl.value });
-          if (highlight.length !== source.length) throw new Error();
-          this.TC = returnAll;
+          const { vmWait: { highlight, ix, message } } = await this.emitAsync("vmWait", "parse", { code: sourceEl.value })
+          if (highlight.length !== source.length) throw new Error(message);
+          this.TC = async opts => this.emitAsync("vmWait", "elab", { ix, ...opts });
           localStorage.setItem("highlight", { code: sourceEl.value, highlight });
           this.history.cur.highlight = highlight;
           this.emit("updateHighlight", highlight)
         } catch (e) { err = e }
         if (err) {
-          let span = document.createElement("span");
+          const span = document.createElement("span");
           span.dataset.label = "ws";
           span.innerText = source;
           highlightEl.innerHTML = "";
-          highlightEl.append(span)
+          highlightEl.append(span);
+          tell.warn.call(this.app, err.message)
         }
         highlightEl.scrollTop = sourceEl.scrollTop;
       }, debounceTime);
@@ -165,8 +189,8 @@ $.targets({
           case "historyUndo":
             if (this.history.past.length) {
               this.history.future.push(this.history.cur);
-              let ix = this.history.past.findLastIndex(({ code }) => code === sourceEl.value);
-              let { code, highlight } = this.history.cur = this.history.past[ix];
+              const ix = this.history.past.findLastIndex(({ code }) => code === sourceEl.value),
+                    { code, highlight } = this.history.cur = this.history.past[ix];
               this.history.past = this.history.past.slice(0, ix);
               sourceEl.value = code;
               this.emit("updateHighlight", highlight)
@@ -178,11 +202,12 @@ $.targets({
     },
   
     async editorRun (memory) {
-      const log = $("#log");
+      const log = $("#log"), dup = new Uint32Array(memory);
       let term, type, metas, ctx, err, stack;
       try {
-        ({ term, type, metas, ctx } = await this.TC.run(memory));
-        tell.log.call(this.app, "Success; Metacontext:\n", ...metas.map(meta => meta.toString(ctx) + "\n"))
+        ({ vmWait: { result: { term, type, metas, ctx, err } } } = await this.TC({ memory: dup, action: "returnAll" }, dup));
+        if (err) throw new Error(err.message);
+        tell.log.call(this.app, "Success; Metacontext:\n", metas.map(meta => meta.toString(ctx)))
       } catch (e) {
         err = e.message; stack = e.stack;
         tell.log.call(this.app, "Fail; Message:", e.message)
