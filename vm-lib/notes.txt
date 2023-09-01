@@ -916,3 +916,87 @@ dfoldnat (\m _. DNat {m}) (\m. DNat {m})
     (dpair zero (pair dz base)))))
   (\m _. DNat {m}) (\m. DNat {m}) const
   (\{m} dn _. dn) dz (ds (ds dz))
+
+let dfoldnat
+    : {S : U -> U}{Z : U}{n} -> ({A m} -> DNat {m} -> A -> S A) -> Z -> DNat {n} -> n U S Z
+    = \{S}{Z}{n} reducer base dn. snd (proj2 {Nat}{\n. Pair (DNat {n}) (n U S Z)} (dn
+        (\n. Sigma Nat (\n. Pair (DNat {n}) (n U S Z)) {n})
+        (\{m} s. s (\n. Sigma Nat (\n. Pair (DNat {n}) (n U S Z)) {suc n}) (\_ dsnd. dpair 
+          (suc m)
+          (pair (ds (fst dsnd)) (reducer (fst dsnd) (snd dsnd)))))
+        (dpair zero (pair dz base))));
+dfoldnat {\_. Vec {zero} Bit}{Vec {zero} Bit}{suc (suc zero)} (\dn a. vnil) vnil (ds (ds dz))
+
+
+
+let Leq : Nat -> Nat -> U
+    = \m n. (LE : Nat -> Nat -> U) -> ({a b} -> LE a b -> LE (suc a) (suc b)) -> ({n} -> LE zero n) -> LE m n;
+let ls : {m n} -> Leq m n -> Leq (suc m) (suc n) = \leq LE s z. s (leq LE s z);
+let lz : {n} -> Leq zero n = \LE s z. z;
+
+let leqTrans : {m n o} -> Leq m n -> Leq n o -> Leq m o
+    = \{m}{n}{o} mn no. no Leq ls
+        (\{osubn}. mn Leq ls
+          (\{nsubm}. lz {add nsubm osubn}));
+leqTrans
+
+let antisymZero : {m} -> Leq m zero -> Leq zero m -> Eq {Nat} m zero = \mz zm P pz. _;
+antisymZero
+let antisym : {m n} -> Leq m n -> Leq n m -> Eq m n
+    = \{m}{n} mn nm P px.
+
+
+
+(\{n : Nat}(S : Nat -> U -> U)(A : Nat -> U){m : Nat}(f : Nat -> Nat -> Nat)
+  (reducer : {p q} -> DNat {p} -> S q (A p) -> S (f q p) (A (suc p)))(base : S m (A zero))(dn : DNat {n})
+  {k : Nat}(s : Sigma Nat (\p. Pair (DNat {p}) (S (foldnat f m p) (A p))) {k}). s
+    (\l. Sigma Nat (\p. Pair (DNat {p})(S (foldnat f m p) (A p))) {suc l})
+    (\dfst dsnd. dpair {Nat}{\p. Pair (DNat {p})(S (foldnat f m p) (A p))} (suc dfst)
+      (pair {DNat {suc dfst}}{S (foldnat f m (suc dfst)) (A (suc dfst))}
+        (ds (fst dsnd)) (reducer {dfst}{foldnat f m dfst} (fst dsnd) (snd dsnd)))))
+  {zero} (\_ T. T) (\m. DNat {m}) const
+  (\{a}{b} dn _. ds dn) dz dz
+  (dpair zero (pair dz dz))
+
+
+
+(\{n : Nat}(S : Nat -> U -> U)(A : Nat -> U){m : Nat}(f : Nat -> Nat -> Nat)
+  (reducer : {p q} -> DNat {p} -> S q (A p) -> S (f p q) (A (suc p)))(base : S m (A zero))(dn : DNat {n})
+  {k : Nat}(s : Sigma Nat (\p. Pair (DNat {p}) (S (foldnat f m p) (A p))) {k}). s
+    (\l. Pair (DNat {suc l}) (S (f l (foldnat {Nat} f m l)) (A (suc l))))
+    (\dfst dsnd. pair (ds (fst dsnd))
+      (reducer {dfst}{foldnat f m dfst} (fst dsnd) (snd dsnd))))
+  {zero} (\m _. DNat {m}) (\m. DNat {m}) {zero} const
+  (\{a}{b} dn _. dn) dz dz
+  (dpair zero (pair dz dz))
+
+
+tt (Pair (DNat {suc zero}) (DNat {zero})) ((\{n : Nat}(S : Nat -> U -> U)(A : Nat -> U){m : Nat}(f : Nat -> Nat -> Nat)
+  (reducer : {p q} -> DNat {p} -> S q (A p) -> S (f p q) (A (suc p)))(base : S m (A zero))(dn : DNat {n})
+  {k : Nat}(s : Sigma Nat (\p. Pair (DNat {p}) (S (foldnat f m p) (A p))) {k}). s
+    (\l. Pair (DNat {suc l}) (S (f l (foldnat f m l)) (A (suc l))))
+    (\dfst dsnd. pair (ds (fst dsnd))
+      (reducer (fst dsnd) (snd dsnd))))
+  {zero} (\m _. DNat {m}) (\m. DNat {m}) {zero} const
+  (\{a}{b} dn _. dn) dz dz
+  (dpair zero (pair dz dz)))
+
+(\{n : Nat}(S : Nat -> U -> U)(A : Nat -> U){m : Nat}(f : Nat -> Nat -> Nat)
+  (reducer : {p q} -> DNat {p} -> S q (A p) -> S (f p q) (A (suc p)))(base : S m (A zero))(dn : DNat {n}).
+  snd (proj2 (dn
+    (\n. Sigma Nat (\n. Pair (DNat {n}) (S (foldnat f m n) (A n))) {n})
+    (\{k} s. s
+--      (\o. Sigma Nat (\l. Pair (DNat {suc l}) (S (foldnat f m (suc l)) (A (suc l)))) {o})
+      (\o. Sigma Nat (\l. Pair (DNat {l}) (S (foldnat f m l) (A l))) {o})
+      (\dfst dsnd. dpair (suc dfst) (pair (ds {dfst} (fst dsnd))
+        (reducer {dfst}{foldnat f m dfst} (fst dsnd) (snd dsnd))))))
+    (dpair zero (pair dz base))))
+  {zero} (\m _. DNat {m}) (\m. DNat {m}) {zero} const
+  (\{a}{b} dn _. dn) dz dz
+  (dpair zero (pair dz dz))
+
+ifoldnat {\m. Vec {foldnat const zero m} Bit}{suc (suc zero)}
+  (\{m} dn _. dn
+    (\k. Vec {fst (k (Pair Nat Nat) (\p. pair (suc (fst p)) (fst p)) (pair zero zero))} Bit)
+    (\v. vcons {Bit} I v) vnil)
+  vnil (ds (ds dz))

@@ -156,6 +156,9 @@ class Parser {  // Rewrite as a bifunctor on state + fail?
         globalContext.pos = [ [ ...start ], [ ...end ] ];
         writable || Object.defineProperty(globalContext, "pos", { writable });
         return [ ...globalContext.pos ] },
+      relabel (p, label) { return state => { let start = state.offset;
+        return p(state).then(s => (s.highlight.labelling = s.highlight.labelling.substring(0, start) +
+          String(Parser.labels.findIndex(x => x === label)).repeat(s.offset - start), s)) } },
       ws (state) { return Parser.many(Parser.choice([
         Parser.satisfy(s => /[^\S\r\n]/g.test(s.data), "_HWS"),
         Parser.satisfy(s => /\r\n?|\n/g.test(s.data), "_VWS"),
@@ -199,7 +202,7 @@ class Parser {  // Rewrite as a bifunctor on state + fail?
         Parser.map(this.keyword("U"), () => new RU({ pos: globalContext.pos })),
         Parser.map(this.keyword("_"), () => new RHole({ pos: globalContext.pos })),
         s => this.encl(s, this.term, "parens") ])(state) },
-      nameImpl (state, rhs, final) { return Parser.do([ this.ident, ({}, s) => Parser.seq([ this.keyword("="), this.cut(rhs, "Malformed named implicit") ])(s), final ])(state) },
+      nameImpl (state, rhs, final) { return Parser.do([ this.relabel(this.ident, "nameImpl"), ({}, s) => Parser.seq([ this.keyword("="), this.cut(rhs, "Malformed named implicit") ])(s), final ])(state) },
       arg (state) { return Parser.choice([
         Parser.seq([ s0 => this.encl(s0, s1 => this.nameImpl(s1, this.term, ({}, s, t) => ({ ...t, data: [ t.data, s.data ] })), "braces"), s => ({ ...s, data: s.data.concat([ s.pos ]) }) ]),
         Parser.seq([ st => this.encl(st, this.term, "braces"), s => ({ ...s, data: [ s.data, true, s.pos ] }) ]),
@@ -211,19 +214,19 @@ class Parser {  // Rewrite as a bifunctor on state + fail?
           { ...t, data: t.data.reduce((func, [arg, nameIcit, pos]) => new RApp({ func, arg, nameIcit, pos: this.setPos({ end: pos }) }), s.data) }) ])(state) },
 
       lamBinder (state) { return Parser.choice([
-        st => this.encl(st, Parser.do([ this.binder, ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed explicit lambda") ]))(s),
+        st => this.encl(st, Parser.do([ this.relabel(this.binder, "lamBinder"), ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed explicit lambda") ]))(s),
           ({}, s, t) => ({ ...t, data: [ s.data[0], false, t.data instanceof Array ? null : t.data, [state.pos, t.pos] ] }) ]), "parens"),
-        Parser.peek(st => this.encl(st, Parser.do([ this.binder, ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed implicit lambda") ]))(s),
+        Parser.peek(st => this.encl(st, Parser.do([ this.relabel(this.binder, "lamBinder"), ({}, s) => Parser.option(Parser.seq([ this.keyword(":"), this.cut(this.term, "Malformed typed implicit lambda") ]))(s),
           ({}, s, t) => ({ ...t, data: [ s.data[0], true, t.data instanceof Array ? null : t.data, [state.pos, t.pos] ] }) ]), "braces")),
-        s0 => this.encl(s0, s1 => this.nameImpl(s1, this.binder, ({}, s, t) => ({ ...t, data: [ t.data[0], s.data, null, [state.pos, t.data[1]] ] })), "braces"),
-        Parser.map(this.binder, ([ data, pos ]) => [ data, false, null, [state.pos, pos[1]] ]) ])(state) },
+        s0 => this.encl(s0, s1 => this.nameImpl(s1, this.relabel(this.binder, "lamBinder"), ({}, s, t) => ({ ...t, data: [ t.data[0], s.data, null, [state.pos, t.data[1]] ] })), "braces"),
+        Parser.map(this.relabel(this.binder, "lamBinder"), ([ data, pos ]) => [ data, false, null, [state.pos, pos[1]] ]) ])(state) },
       lam (state) { return Parser.do([ this.keyword("\\"),
         ({}, s) => Parser.many(this.lamBinder)(s),
         (x, y, s) => Parser.seq([ this.cut(this.keyword("."), "Lambda without body", { start: x.pos, end: y.pos }), this.term ])(s),
         ({}, {}, s, t) => ({ ...t, data: s.data.reduceRight((acc, [name, nameIcit, mbType, pos]) =>
           new RLam({ name, nameIcit, mbType, body: acc, pos: this.setPos({ start: pos[0] }) }), t.data) }) ])(state) },
 
-      piBinder (state) { let icitBinder = glyphs => st => this.encl(st, Parser.do([ Parser.many(this.binder),
+      piBinder (state) { let icitBinder = glyphs => st => this.encl(st, Parser.do([ Parser.many(this.relabel(this.binder, "piBinder")),
           ({}, s) => (tm => glyphs === "parens" ? tm : Parser.alt(tm, s => ({ ...s, data: new RHole({ pos: globalContext.pos }) })))
             (Parser.reql(this.keyword(":"), this.term))(s),
           ({}, s, t) => ({ ...t, data: [ s.data, t.data, glyphs === "braces" ] }) ]), glyphs);

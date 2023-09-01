@@ -182,17 +182,16 @@ let nelToList : {A} -> Nonempty A -> List A           = \{A} nel. nel (List A) (
 
 -- Binary Trees
 
-let BTree : U -> U = \A. (B : U) -> (B -> B -> B) -> (A -> B) -> B;
-let bleaf : {A} -> A -> BTree A = \a B n l. l a;
-let bnode : {A} -> BTree A -> BTree A -> BTree A = \ta tb B n l. n (ta B n l) (tb B n l);
-
+let BTree : U -> U                                    = \A. (B : U) -> (A -> B -> B -> B) -> (A -> B) -> B;
+let bleaf : {A} -> A -> BTree A                       = \a B n l. l a;
+let bnode : {A} -> A -> BTree A -> BTree A -> BTree A = \a ta tb B n l. n a (ta B n l) (tb B n l);
 
 -- Rose Trees
 
-let RTree : U -> U = \A. (R : U) -> (R -> R -> R) -> (A -> R -> R) -> R -> R;
-let rnil : {A} -> RTree A = \R t l n. n;
-let rleaf : {A} -> A -> RTree A -> RTree A = \a r R t l n. l a (r R t l n);
-let rnode : {A} -> RTree A -> RTree A -> RTree A = \tx ty R t l n. t (tx R t l n) (ty R t l n);
+let RTree : U -> U                                    = \A. (R : U) -> (R -> R -> R) -> (A -> R -> R) -> R -> R;
+let rnil : {A} -> RTree A                             = \R t l n. n;
+let rleaf : {A} -> A -> RTree A -> RTree A            = \a r R t l n. l a (r R t l n);
+let rnode : {A} -> RTree A -> RTree A -> RTree A      = \tx ty R t l n. t (tx R t l n) (ty R t l n);
 
 
 -- Continuations
@@ -229,12 +228,20 @@ let dadd : {m n} -> DNat {m} -> DNat {n} -> DNat {add m n}
 --    = \{m}{n=n} a b DN s z. a (\k. DN (mul k n)) (b (\k. DN _) s) z;
 let lowerDNat : {n} -> DNat {n} -> Nat                = \{n} _. n;
 
+let ifoldnat
+    : {A : Nat -> U}{n} -> ({m} -> DNat {m} -> A m -> A (suc m)) -> A zero -> DNat {n} -> A n
+    = \{A}{n} reducer base dn. snd (proj2 (dn
+        (\n. Sigma Nat (\n. Pair (DNat {n}) (A n)) {n})
+        (\{m} s. s (\m. Sigma Nat (\n. Pair (DNat {n}) (A n)) {suc m}) (\dfst dsnd. dpair
+          (suc dfst) (pair (ds (fst dsnd)) (reducer (fst dsnd) (snd dsnd)))))
+        (dpair zero (pair dz base))));
+--ifoldnat {\m. Vec {m} Bit} (\{m} dn v. vcons I v) vnil (ds dz)
 let dfoldnat
     : {S : U -> U}{Z : U}{n} -> ({A m} -> DNat {m} -> A -> S A) -> Z -> DNat {n} -> n U S Z
-    = \{S}{Z}{n} reducer base dn. snd (proj2 {Nat}{\n. Pair (DNat {n}) (n U S Z)} (dn
+    = \{S}{Z}{n} reducer base dn. snd (proj2 (dn
         (\n. Sigma Nat (\n. Pair (DNat {n}) (n U S Z)) {n})
-        (\{m} s. dpair (suc m)
-          (pair (ds (fst (proj2 s))) (reducer (fst (proj2 s)) (snd (proj2 s)))))
+        (\{m} s. s (\m. Sigma Nat (\n. Pair (DNat {n}) (n U S Z)) {suc m}) (\dfst dsnd. dpair
+          (suc dfst) (pair (ds (fst dsnd)) (reducer (fst dsnd) (snd dsnd)))))
         (dpair zero (pair dz base))));
 --dfoldnat {\_. Vec {zero} Bit}{Vec {zero} Bit}{suc (suc zero)} (\dn a. vnil) vnil (ds (ds dz))
 
@@ -536,6 +543,17 @@ let EqSetoid : {T} -> Setoid {T}                      = \S. S Eq (\E. E refl sym
 -- EqSetoid {Nat} (\Rel isEquiv. isEquiv (\refl sym trans. refl))
 
 
+-- Less than or equal to
+
+let Leq : Nat -> Nat -> U
+    = \m n. (LE : Nat -> Nat -> U) -> ({a b} -> LE a b -> LE (suc a) (suc b)) -> ({n} -> LE zero n) -> LE m n;
+let ls : {m n} -> Leq m n -> Leq (suc m) (suc n)      = \leq LE s z. s (leq LE s z);
+let lz : {n} -> Leq zero n                            = \LE s z. z;
+
+let leqRefl : {m n}{dm : DNat {m}} -> Eq {Nat} m n -> Leq m n
+    = \{m}{dm=dm} mne. mne (\l. Leq m l) (dm (\k. Leq k k) (\{k} acc. ls {k}{k} acc) (lz {zero}));
+
+
 -- Nullary Relations
 
 let neg : U -> U                                      = \P. P -> Void;
@@ -771,14 +789,41 @@ let NatAddMonoid : Monoid {Nat} = \M. M {Nat}{Eq {Nat}}{add}{zero} NatAddIsMonoi
 let addSuc : (m n : Nat){dm : DNat {m}} -> Eq (add m (suc n)) (suc (add m n))
     = \m n {dm}. dm (\m. Eq (add m (suc n)) (suc (add m n))) (cong suc) refl;
 let addCommSuc
-    : {k}(n : Nat){dn : DNat {n}} -> Eq (add n k) (add k n) ->
+    : {n : Nat}{dn : DNat {n}}{k} -> Eq (add n k) (add k n) ->
         Eq (add n (suc k)) (add (suc k) n)
-    = \{k} n {dn} acc.
-         stepAs (add n (suc k)) (addSuc n k {dn})
-        (stepAs (suc (add n k)) (cong suc acc)
-        (qed (add (suc k) n)));
+    = \{n}{dn}{k} acc.
+        stepAs (add n (suc k)) (addSuc n k {dn})
+       (stepAs (suc (add n k)) (cong suc acc)
+       (qed (add (suc k) n)));
 let addComm : {m n : Nat}{dm : DNat {m}}{dn : DNat {n}} -> Eq (add m n) (add n m)
-    = \{m}{n}{dm}{dn}. dn (\n. Eq {Nat} (add m n) (add n m)) (addCommSuc m {dm}) (addRightIden {m}{dm});
+    = \{m}{n}{dm}{dn}. dn (\n. Eq {Nat} (add m n) (add n m)) (addCommSuc {m}{dm}) (addRightIden {m}{dm});
 let NatAddIsCommMonoid : IsCommMonoid {Nat} Eq add zero = \IsMon. IsMon NatAddIsMonoid (\{x}{y}. addComm {x}{y});
 let NatAddCommMonoid : CommMonoid {Nat} = \CM. CM {Nat}{Eq {Nat}}{add}{zero} NatAddIsCommMonoid;
 --NatAddCommMonoid (\IsCM. IsCM (\IsMon Comm. IsMon (\IsUMag Assoc. IsUMag (\IsMag Iden. IsMag (\IsEquiv opcong. IsEquiv (\refl sym trans. refl))))))
+
+
+-- Foldnat is unrollable
+
+let natIndInFst
+    : {A}{f : Nat -> A -> A}{a : A}{n : Nat}{dn : DNat {n}} ->
+        Eq {Nat} (fst (n (Pair Nat A) (\p. pair (suc (fst p)) (f (fst p) (snd p))) (pair zero a))) n
+    = \{A}{f}{a}{n}{dn}. dn
+        (\n. Eq {Nat} (fst (n (Pair Nat A) (\p. pair (suc (fst p)) (f (fst p) (snd p))) (pair zero a))) n)
+        (cong suc) refl;
+let unrollFoldnatSuc
+    : {A}{f : Nat -> A -> A}{a : A}{n : Nat}{dn : DNat {n}} ->
+        Eq {A} (foldnat f a (suc n))       (f n (foldnat f a n)) ->
+        Eq {A} (foldnat f a (suc (suc n))) (f (suc n) (foldnat f a (suc n)))
+    = \{A}{f}{a}{n}{dn} acc.
+        stepAs (foldnat f a (suc (suc n)))       (cong2 f (cong suc (natIndInFst {A}{f}{a}{n}{dn})) acc)
+       (stepAs (f (suc n) (f n (foldnat f a n))) (cong2 f refl (cong2 f (sym (natIndInFst {A}{f}{a}{n}{dn})) refl))
+       (qed (f (suc n) (foldnat f a (suc n)))));
+let unrollFoldnat
+    : {A}{f : Nat -> A -> A}{a : A}{n : Nat}{dn : DNat {n}} ->
+        Eq {A} (foldnat f a (suc n)) (f n (foldnat f a n))
+    = \{A}{f}{a}{n}{dn}. snd (proj2 (dn
+        (\n. Sigma Nat (\n. Pair (DNat {n}) (Eq {A} (foldnat f a (suc n)) (f n (foldnat f a n)))) {n})
+        (\{k} s. s
+          (\m. Sigma Nat (\n. Pair (DNat {n}) (Eq {A} (foldnat f a (suc n)) (f n (foldnat f a n)))) {suc m})
+          (\dfst dsnd. dpair (suc dfst) (pair (ds (fst dsnd)) (unrollFoldnatSuc {A}{f}{a}{dfst}{fst dsnd} (snd dsnd)))))
+        (dpair zero (pair dz refl))));

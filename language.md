@@ -107,7 +107,7 @@ Function application consists of a function identifier followed by a series of t
 ## Encoding data types
 Since there are no constructors, records, or any other language features than what has been mentioned, commonly used structures have to be defined by encoding.
 
-The Berarducci-Boehm encoding, known colloquially as the Church encoding, is quite versatile. Some examples follow.
+The Boehm-Berarducci encoding, known colloquially as the Church encoding, is quite versatile. Some examples follow.
 ### Void, Unit, Bool
 `Void` is the type without constructors, also known as Bottom, and its eliminator is called `absurd` as it is impossible to be applied. We use a hole to represent a value which cannot be solved:
 ```
@@ -207,10 +207,10 @@ The Berarducci-Boehm encoding, known colloquially as the Church encoding, is qui
 `BTree` is the type of Binary trees:
 ```
     let BTree : U -> U
-        = \A. (B : U) -> (B -> B -> B) -> (A -> B) -> B;
+        = \A. (B : U) -> (A -> B -> B -> B) -> (A -> B) -> B;
     let bleaf : {A} -> A -> BTree A         = \a B n l. l a;
-    let bnode : {A} -> BTree A -> BTree A -> BTree A
-        = \ta tb B n l. n (ta B n l) (tb B n l);
+    let bnode : {A} -> A -> BTree A -> BTree A -> BTree A
+        = \a ta tb B n l. n a (ta B n l) (tb B n l);
 ```
 `RTree` is the type of Rose trees:
 ```
@@ -403,12 +403,12 @@ Currently researching dfoldnat, with a tentative type signature of:
     let addSuc : (m n : Nat){dm : DNat {m}} -> Eq (add m (suc n)) (suc (add m n))
         = \m n {dm}. dm (\m. Eq (add m (suc n)) (suc (add m n))) (cong suc) refl;
     let addCommSuc
-        : {k}(n : Nat){dn : DNat {n}} -> Eq (add n k) (add k n) ->
+        : {n : Nat}{dn : DNat {n}}{k} -> Eq (add n k) (add k n) ->
             Eq (add n (suc k)) (add (suc k) n)
-        = \{k} n {dn} acc.
+        = \{n}{dn}{k} acc.
             stepAs (add n (suc k)) (addSuc n k {dn})
             (stepAs (suc (add n k)) (cong suc acc)
             (qed (add (suc k) n)));
     let addComm : {m n : Nat}{dm : DNat {m}}{dn : DNat {n}} -> Eq (add m n) (add n m)
-        = \{m}{n}{dm}{dn}. dn (\n. Eq {Nat} (add m n) (add n m)) (addCommSuc m {dm}) (addRightIden {m}{dm});
+        = \{m}{n}{dm}{dn}. dn (\n. Eq {Nat} (add m n) (add n m)) (addCommSuc {m}{dm}) (addRightIden {m}{dm});
 ```
