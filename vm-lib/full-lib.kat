@@ -65,9 +65,13 @@ let typeof : {A} -> A -> U                            = \{A} a. A;
 
 -- Void
 
-let Void : U                                          = (V : U) -> V;
-let absurd : {A} -> Void -> A                         = \V. _;
+let Void : U                                          = Bot;
+let absurd : {A} -> Void -> A                         = exfalso;
 
+let absurdIsUnique : {C}(h : Void -> C)(w : Bot) -> Eq {C} (exfalso w) (h w)
+    = \{C} h. exfalso;
+
+-- tt (Eq {Nat} zero zero -> Bot) (\zisz. zisz (\_. Bot) _)
 
 -- Unit
 
@@ -216,62 +220,6 @@ let undwrap : {T t} -> DWrap {T} t -> T               = \{V}{v} w. w (\_. V) (\_
 -- tt (DWrap tt) ((\t. tt (DWrap {Unit} t) (dwrap t)) tt)
 
 
--- Dependent Nats
-
-let DNat : {n} -> U
-    = \{n}. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN zero -> DN n;
-let dz : DNat {zero}                                  = \DN s z. z;
-let ds : {n} -> DNat {n} -> DNat {suc n}              = \n DN s z. s (n DN s z);
-let dadd : {m n} -> DNat {m} -> DNat {n} -> DNat {add m n}
-    = \{n=n} a b DN s z. a (\k. DN (add k n)) s (b DN s z);
---let dmul : {m n} -> DNat {m} -> DNat {n} -> DNat {mul m n}
---    = \{m}{n=n} a b DN s z. a (\k. DN (mul k n)) (b (\k. DN _) s) z;
-let lowerDNat : {n} -> DNat {n} -> Nat                = \{n} _. n;
-
-let ifoldnat
-    : {A : Nat -> U}{n} -> ({m} -> DNat {m} -> A m -> A (suc m)) -> A zero -> DNat {n} -> A n
-    = \{A}{n} reducer base dn. snd (proj2 (dn
-        (\n. Sigma Nat (\n. Pair (DNat {n}) (A n)) {n})
-        (\{m} s. s (\m. Sigma Nat (\n. Pair (DNat {n}) (A n)) {suc m}) (\dfst dsnd. dpair
-          (suc dfst) (pair (ds (fst dsnd)) (reducer (fst dsnd) (snd dsnd)))))
-        (dpair zero (pair dz base))));
---ifoldnat {\m. Vec {m} Bit} (\{m} dn v. vcons I v) vnil (ds dz)
-let dfoldnat
-    : {S : U -> U}{Z : U}{n} -> ({A m} -> DNat {m} -> A -> S A) -> Z -> DNat {n} -> n U S Z
-    = \{S}{Z}{n} reducer base dn. snd (proj2 (dn
-        (\n. Sigma Nat (\n. Pair (DNat {n}) (n U S Z)) {n})
-        (\{m} s. s (\m. Sigma Nat (\n. Pair (DNat {n}) (n U S Z)) {suc m}) (\dfst dsnd. dpair
-          (suc dfst) (pair (ds (fst dsnd)) (reducer (fst dsnd) (snd dsnd)))))
-        (dpair zero (pair dz base))));
---dfoldnat {\_. Vec {zero} Bit}{Vec {zero} Bit}{suc (suc zero)} (\dn a. vnil) vnil (ds (ds dz))
-
-let initWord : {n} -> DNat {n} -> LTree {n} Bit       = \dn. dn (\n. LTree {n} Bit) (\acc. node acc acc) (leaf O);
--- initWord (ds (ds dz))
-
--- Dependent Lists
-
-let DList : (A : U){l : List A} -> U
-    = \A {l}. (DL : List A -> U) -> DL nil -> ({as}(a : A) -> DL as -> DL (cons a as)) -> DL l;
-let dnil : {A} -> DList A {nil} = \DL n c. n;
-let dcons : {A as}(a : A) -> DList A {as} -> DList A {cons a as} = \a as DL n c. c a (as DL n c);
-let lowerDList : {A as} -> DList A {as} -> List A     = \{as=as} _. as;
-
--- Dependent Maybe
-
-let DMaybe : (A : U){ma} -> U
-    = \A {ma}. (DM : Maybe A -> U) -> DM nothing -> ((a : A) -> DM (just a)) -> DM ma;
-let dnothing : {A} -> DMaybe A {nothing} = \DM n j. n;
-let djust : {A}(a : A) -> DMaybe A {just a} = \a DM n j. j a;
-let lowerDMaybe : {A ma} -> DMaybe A {ma} -> Maybe A = \{ma=ma} _. ma;
-
-let dmaybe
-    : {A}{B : Maybe A -> U} -> B nothing -> ((a : A) -> B (just a)) ->
-      {ma : Maybe A} -> DMaybe A {ma} -> B ma
-    = \{B=B} b f dma. dma B b f;
---dmaybe {Nat}{\mn. mn U Unit (\n. Fin {suc n})} tt (\v. fz {v}) (djust (suc zero))
---proj2 {Maybe Nat}{\mn. mn U Unit (\n. Fin {suc n})} (dpair (just (suc zero)) fz)
-
-
 -- Finite Sets
 
 let Fin : {n} -> U
@@ -299,12 +247,12 @@ let vconcat : {A m n} -> Vec {m} A -> Vec {n} A -> Vec {add m n} A
     = \{A}{n=n} v1 v2. v1 (\m. Vec {add m n} A) v2 vcons;
 
 let foldvec
-    : {A}{B : Nat -> U}{n} -> ({m} -> Vec {m} A -> A -> B m -> B (suc m)) -> B zero -> Vec {n} A -> B n
-    = \{A}{B} reducer base v. snd (proj2 {Nat}{\n. Pair (Vec {n} A) (B n)} (v
-        (\n. Sigma Nat (\n. Pair (Vec {n} A) (B n)) {n})
+    : {A : Nat -> U}{B n} -> ({m} -> B -> Vec {m} B -> A m -> A (suc m)) -> A zero -> Vec {n} B -> A n
+    = \{A}{B}{n} reducer base v. snd (proj2 (v
+        (\n. Sigma Nat (\n. Pair (Vec {n} B) (A n)) {n})
         (dpair zero (pair vnil base))
-        (\{m} a s. dpair (suc m)
-          (pair (vcons a (fst (proj2 s))) (reducer (fst (proj2 s)) a (snd (proj2 s)))))));
+        (\{m} b s. s (\m. Sigma Nat (\n. Pair (Vec {n} B) (A n)) {suc m}) (\dfst dsnd. dpair
+          (suc dfst) (pair (vcons b (fst dsnd)) (reducer b (fst dsnd) (snd dsnd)))))));
 {-foldvec {Bit}{\n. Fin {suc n}}
     (\{m} _ b fn. b (Fin {suc (suc m)}) (fs fn) (fn (\n. Fin {suc n}) fs fz))
     fz (vcons I (vcons O vnil))-}
@@ -389,6 +337,111 @@ let somebush : Bush Bit
 
 
 
+-------------------------
+-- Induction Datatypes --
+-------------------------
+
+-- Void Induction
+
+let VoidInd : {v} -> U                                = \{v}. (VI : Void -> U) -> VI v;
+let voidind : {v} -> VoidInd {v}                      = \{v} _. exfalso v;
+
+-- Unit Induction
+
+let UnitInd : {u} -> U                                = \{u}. (UI : Unit -> U) -> UI tt -> UI u;
+let ttind : UnitInd {tt}                              = \UI t. t;
+
+-- Bool and Bool Induction
+
+let Bool : U                                          = (B : U) -> B -> B -> B;
+let true : Bool                                       = \B t f. t;
+let false : Bool                                      = \B t f. f;
+
+let BoolInd : {b} -> U                                = \{b}. (BI : Bool -> U) -> BI true -> BI false -> BI b;
+let trueind : BoolInd {true}                          = \BI t f. t;
+let falseind : BoolInd {false}                        = \BI t f. f;
+
+-- Pair Induction
+
+let PairInd : (A B : U){p} -> U
+    = \A B {p}. (PI : Pair A B -> U) -> ((a : A)(b : B) -> PI (pair a b)) -> PI p;
+let pairind : {A B}(a : A)(b : B) -> PairInd A B {pair a b}
+    = \a b PI p. p a b;
+
+-- Nat Induction
+
+let NatInd : {n} -> U
+    = \{n}. (NI : Nat -> U) -> ({m} -> NI m -> NI (suc m)) -> NI zero -> NI n;
+let zi : NatInd {zero}                                = \NI s z. z;
+let si : {n} -> NatInd {n} -> NatInd {suc n}          = \n NI s z. s (n NI s z);
+let addind : {m n} -> NatInd {m} -> NatInd {n} -> NatInd {add m n}
+    = \{n=n} a b NI s z. a (\k. NI (add k n)) s (b NI s z);
+--let mulind : {m n} -> NatInd {m} -> NatInd {n} -> NatInd {mul m n}
+--    = \{m}{n=n} a b NI s z. a (\k. NI (mul k n)) (b (\k. NI _) s) z;
+let lowerNatInd : {n} -> NatInd {n} -> Nat            = \{n} _. n;
+
+let foldnatind
+    : {A : Nat -> U}{n} -> ({m} -> NatInd {m} -> A m -> A (suc m)) -> A zero -> NatInd {n} -> A n
+    = \{A}{n} reducer base ni. snd (proj2 (ni
+        (\n. Sigma Nat (\n. Pair (NatInd {n}) (A n)) {n})
+        (\{m} s. s (\m. Sigma Nat (\n. Pair (NatInd {n}) (A n)) {suc m}) (\dfst dsnd. dpair
+          (suc dfst) (pair (si (fst dsnd)) (reducer (fst dsnd) (snd dsnd)))))
+        (dpair zero (pair zi base))));
+--foldnatind {\m. Vec {m} Bit} (\{m} ni v. vcons I v) vnil (si zi)
+let dfoldnat
+    : {S : U -> U}{Z : U}{n} -> ({A m} -> NatInd {m} -> A -> S A) -> Z -> NatInd {n} -> n U S Z
+    = \{S}{Z}{n} reducer base ni. snd (proj2 (ni
+        (\n. Sigma Nat (\n. Pair (NatInd {n}) (n U S Z)) {n})
+        (\{m} s. s (\m. Sigma Nat (\n. Pair (NatInd {n}) (n U S Z)) {suc m}) (\dfst dsnd. dpair
+          (suc dfst) (pair (si (fst dsnd)) (reducer (fst dsnd) (snd dsnd)))))
+        (dpair zero (pair zi base))));
+--dfoldnat {\_. Vec {zero} Bit}{Vec {zero} Bit}{suc (suc zero)} (\ni a. vnil) vnil (si (si zi))
+
+let initWord : {n} -> NatInd {n} -> LTree {n} Bit     = \ni. ni (\n. LTree {n} Bit) (\acc. node acc acc) (leaf O);
+-- initWord (si (si zi))
+
+-- Maybe Induction
+
+let MaybeInd : (A : U){ma} -> U
+    = \A {ma}. (MI : Maybe A -> U) -> MI nothing -> ((a : A) -> MI (just a)) -> MI ma;
+let nothingind : {A} -> MaybeInd A {nothing}          = \MI n j. n;
+let justind : {A}(a : A) -> MaybeInd A {just a}       = \a MI n j. j a;
+let lowerMaybeInd : {A ma} -> MaybeInd A {ma} -> Maybe A
+    = \{ma=ma} _. ma;
+
+let maybeind
+    : {A}{B : Maybe A -> U} -> B nothing -> ((a : A) -> B (just a)) ->
+      {ma : Maybe A} -> MaybeInd A {ma} -> B ma
+    = \{B=B} b f mi. mi B b f;
+--maybeind {Nat}{\mn. mn U Unit (\n. Fin {suc n})} tt (\v. fz {v}) (djust (suc zero))
+--proj2 {Maybe Nat}{\mn. mn U Unit (\n. Fin {suc n})} (dpair (just (suc zero)) fz)
+
+-- Either Induction
+
+let EitherInd : (A B : U){e} -> U
+    = \A B {e}. (EI : Either A B -> U) ->
+         ((a : A) -> EI (left a)) -> ((b : B) -> EI (right b)) -> EI e;
+let leftind : {A B}(a : A) -> EitherInd A B {left a}  = \a EI l r. l a;
+let leftind : {A B}(b : B) -> EitherInd A B {right b} = \b EI l r. r b;
+
+-- List Induction
+
+let ListInd : (A : U){l : List A} -> U
+    = \A {l}. (LI : List A -> U) -> LI nil -> ({as}(a : A) -> LI as -> LI (cons a as)) -> LI l;
+let nilind : {A} -> ListInd A {nil}                   = \LI n c. n;
+let consind : {A as}(a : A) -> ListInd A {as} -> ListInd A {cons a as}
+    = \a as LI n c. c a (as LI n c);
+let lowerListInd : {A as} -> ListInd A {as} -> List A = \{as=as} _. as;
+
+-- Cont Induction
+
+let ContInd : (W A : U){c} -> U
+    = \W A {c}. (CI : Cont W A -> U) -> ((f : (A -> W) -> W) -> CI (cont f)) -> CI c;
+let runind : {W A}(f : (A -> W) -> W) -> ContInd W A {cont f}
+    = \f C c. c f;
+
+
+
 ---------------------------
 -- Non-dependent Records --
 ---------------------------
@@ -437,7 +490,7 @@ let listFunctor : Functor List                        = \F. F (\fn la L n c. la 
 -- listFunctor (\map. map not (cons O (cons I nil)))
 
 let ltreeFunctor : Functor LTree                      = \F. F (\fn ta T l n. ta T (\a. l (fn a)) n);
--- ltreeFunctor (\map. map not (initWord (ds (ds dz))))
+-- ltreeFunctor (\map. map not (initWord (si (si zi))))
 
 
 -- Applicatives
@@ -509,7 +562,7 @@ let ltreeTrav : {n} -> Trav (LTree {n})
     = \T. T (\{F}{app}{B} f ta. app (\pure ap. ta (\n. F (LTree {n} B))
         (\a. ap (pure leaf) (f a)) (\{m} l r. ap (ap (pure node) l) r)));
 let maybeO : Bit -> Maybe Unit = \b. b (Maybe Unit) nothing (just tt);
---ltreeTrav {S=Maybe} (\traverse. traverse {app=maybeApp} maybeO (initWord (ds dz)))
+--ltreeTrav {S=Maybe} (\traverse. traverse {app=maybeApp} maybeO (initWord (si zi)))
 
 let mapM : {F}{trav : Trav F}{M}{monad : Monad M}{B A} -> (A -> M B) -> F A -> M (F B)
     = \{F}{trav}{M}{monad} f as. trav M (\traverse. traverse {app=monadApp monad} f as);
@@ -550,14 +603,14 @@ let Leq : Nat -> Nat -> U
 let ls : {m n} -> Leq m n -> Leq (suc m) (suc n)      = \leq LE s z. s (leq LE s z);
 let lz : {n} -> Leq zero n                            = \LE s z. z;
 
-let leqRefl : {m n}{dm : DNat {m}} -> Eq {Nat} m n -> Leq m n
-    = \{m}{dm=dm} mne. mne (\l. Leq m l) (dm (\k. Leq k k) (\{k} acc. ls {k}{k} acc) (lz {zero}));
+let leqRefl : {m n}{mi : NatInd {m}} -> Eq {Nat} m n -> Leq m n
+    = \{m}{mi=mi} mne. mne (\l. Leq m l) (mi (\k. Leq k k) (\{k} acc. ls {k}{k} acc) (lz {zero}));
 
 
 -- Nullary Relations
 
-let neg : U -> U                                      = \P. P -> Void;
-let contradiction : {P Q} -> P -> neg P -> Q          = \p notp. absurd (notp p);
+let neg : U -> U                                      = \P. P -> Bot;
+let contradiction : {P Q} -> P -> neg P -> Q          = \p notp. exfalso (notp p);
 
 let Reflects : U -> Bit -> U                          = \P b. (R : Bit -> U) -> (P -> R I) -> (neg P -> R O) -> R b;
 let ofyes : {P} -> P -> Reflects P I                  = \p R y n. y p;
@@ -575,7 +628,7 @@ let Decidable : {A B} -> (A -> B -> U) -> U           = \{A}{B} Rel. (x : A)(y :
 
 -- Unary Relations
 
-let EmptySet : {A} -> A -> U                          = \_. Void;
+let EmptySet : {A} -> A -> U                          = \_. Bot;
 let UniversalSet : {A} -> A -> U                      = \_. Unit;
 let Member : {A} -> A -> (A -> U) -> U                = \x P. P x;
 let Subset : {A} -> (A -> U) -> (A -> U) -> U         = \P Q. {x} -> Member x P -> Member x Q;
@@ -751,16 +804,16 @@ let AnyC : (C : Container){X}(P : X -> U)(cx : cextend C X) -> U
 let ListIsMagma : {T} -> IsMagma {List T} Eq concat   = \IsM. IsM EqIsEquiv (cong2 concat);
 let ListMagma : {T} -> Magma {List T} = \{T} M. M {List T}{Eq {List T}}{concat} ListIsMagma;
 
-let concatRightIden : {A}{xs : List A}{dxs : DList A {xs}} -> Eq {List A} (concat xs nil) xs
-    = \{A}{xs}{dxs}. dxs
+let concatRightIden : {A}{xs : List A}{xsi : ListInd A {xs}} -> Eq {List A} (concat xs nil) xs
+    = \{A}{xs}{xsi}. xsi
         (\xs. Eq {List A} (concat xs nil) xs) refl (\a. cong (cons a));
 let ListIsUnitalMagma : {T} -> IsUnitalMagma {List T} Eq concat nil = \IsUM. IsUM ListIsMagma (pair refl (\{xs}. concatRightIden {xs=xs}));
 let ListUnitalMagma : {T} -> UnitalMagma {List T}     = \{T} UM. UM {List T}{Eq {List T}}{concat}{nil} ListIsUnitalMagma;
 
 let concatAssoc
-    : {A}{xs ys zs : List A}{dxs : DList A {xs}} ->
+    : {A}{xs ys zs : List A}{xsi : ListInd A {xs}} ->
         Eq {List A} (concat (concat xs ys) zs) (concat xs (concat ys zs))
-    = \{A}{xs}{ys}{zs}{dxs}. dxs
+    = \{A}{xs}{ys}{zs}{xsi}. xsi
         (\xs. Eq {List A} (concat (concat xs ys) zs) (concat xs (concat ys zs)))
         refl (\a. cong (cons a));
 let ListIsMonoid : {T} -> IsMonoid {List T} Eq concat nil = \IsUM. IsUM ListIsUnitalMagma (\{xs}. concatAssoc {xs=xs});
@@ -774,29 +827,29 @@ let NatAddIsMagma : IsMagma Eq add = \IsM. IsM EqIsEquiv (cong2 add);
 let NatAddMagma : Magma {Nat} = \M. M {Nat}{Eq {Nat}}{add} NatAddIsMagma;
 --NatAddMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
 
-let addRightIden : {n : Nat}{dn : DNat {n}} -> Eq {Nat} (add n zero) n
-    = \{n}{dn}. dn (\n. Eq {Nat} (add n zero) n) (cong suc) refl;
+let addRightIden : {n : Nat}{ni : NatInd {n}} -> Eq {Nat} (add n zero) n
+    = \{n}{ni}. ni (\n. Eq {Nat} (add n zero) n) (cong suc) refl;
 let NatAddIsUnitalMagma : IsUnitalMagma {Nat} Eq add zero = \IsUM. IsUM NatAddIsMagma (pair refl addRightIden);
 let NatAddUnitalMagma : UnitalMagma {Nat} = \UM. UM {Nat}{Eq {Nat}}{add}{zero} NatAddIsUnitalMagma;
 --NatAddUnitalMagma  (\IsUM. IsUM (\IsM Iden. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans.refl))))
 
-let addAssoc : {m n p : Nat}{dm : DNat {m}} -> Eq {Nat} (add (add m n) p) (add m (add n p))
-    = \ {m}{n}{p}{dm}. dm (\m. Eq {Nat} (add (add m n) p) (add m (add n p))) (cong suc) refl;
+let addAssoc : {m n p : Nat}{mi : NatInd {m}} -> Eq {Nat} (add (add m n) p) (add m (add n p))
+    = \ {m}{n}{p}{mi}. mi (\m. Eq {Nat} (add (add m n) p) (add m (add n p))) (cong suc) refl;
 let NatAddIsMonoid : IsMonoid {Nat} Eq add zero = \IsUMag. IsUMag NatAddIsUnitalMagma (\{x}{y}{z}. addAssoc {x}{y}{z});
 let NatAddMonoid : Monoid {Nat} = \M. M {Nat}{Eq {Nat}}{add}{zero} NatAddIsMonoid;
 --NatAddMonoid (\IsMon. IsMon (\IsUMag Assoc. IsUMag (\IsMag Iden. IsMag (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))))
 
-let addSuc : (m n : Nat){dm : DNat {m}} -> Eq (add m (suc n)) (suc (add m n))
-    = \m n {dm}. dm (\m. Eq (add m (suc n)) (suc (add m n))) (cong suc) refl;
+let addSuc : (m n : Nat){mi : NatInd {m}} -> Eq (add m (suc n)) (suc (add m n))
+    = \m n {mi}. mi (\m. Eq (add m (suc n)) (suc (add m n))) (cong suc) refl;
 let addCommSuc
-    : {n : Nat}{dn : DNat {n}}{k} -> Eq (add n k) (add k n) ->
+    : {n : Nat}{ni : NatInd {n}}{k} -> Eq (add n k) (add k n) ->
         Eq (add n (suc k)) (add (suc k) n)
-    = \{n}{dn}{k} acc.
-        stepAs (add n (suc k)) (addSuc n k {dn})
+    = \{n}{ni}{k} acc.
+        stepAs (add n (suc k)) (addSuc n k {ni})
        (stepAs (suc (add n k)) (cong suc acc)
        (qed (add (suc k) n)));
-let addComm : {m n : Nat}{dm : DNat {m}}{dn : DNat {n}} -> Eq (add m n) (add n m)
-    = \{m}{n}{dm}{dn}. dn (\n. Eq {Nat} (add m n) (add n m)) (addCommSuc {m}{dm}) (addRightIden {m}{dm});
+let addComm : {m n : Nat}{mi : NatInd {m}}{ni : NatInd {n}} -> Eq (add m n) (add n m)
+    = \{m}{n}{mi}{ni}. ni (\n. Eq {Nat} (add m n) (add n m)) (addCommSuc {m}{mi}) (addRightIden {m}{mi});
 let NatAddIsCommMonoid : IsCommMonoid {Nat} Eq add zero = \IsMon. IsMon NatAddIsMonoid (\{x}{y}. addComm {x}{y});
 let NatAddCommMonoid : CommMonoid {Nat} = \CM. CM {Nat}{Eq {Nat}}{add}{zero} NatAddIsCommMonoid;
 --NatAddCommMonoid (\IsCM. IsCM (\IsMon Comm. IsMon (\IsUMag Assoc. IsUMag (\IsMag Iden. IsMag (\IsEquiv opcong. IsEquiv (\refl sym trans. refl))))))
@@ -805,25 +858,37 @@ let NatAddCommMonoid : CommMonoid {Nat} = \CM. CM {Nat}{Eq {Nat}}{add}{zero} Nat
 -- Foldnat is unrollable
 
 let natIndInFst
-    : {A}{f : Nat -> A -> A}{a : A}{n : Nat}{dn : DNat {n}} ->
+    : {A}{f : Nat -> A -> A}{a : A}{n : Nat}{ni : NatInd {n}} ->
         Eq {Nat} (fst (n (Pair Nat A) (\p. pair (suc (fst p)) (f (fst p) (snd p))) (pair zero a))) n
-    = \{A}{f}{a}{n}{dn}. dn
+    = \{A}{f}{a}{n}{ni}. ni
         (\n. Eq {Nat} (fst (n (Pair Nat A) (\p. pair (suc (fst p)) (f (fst p) (snd p))) (pair zero a))) n)
         (cong suc) refl;
 let unrollFoldnatSuc
-    : {A}{f : Nat -> A -> A}{a : A}{n : Nat}{dn : DNat {n}} ->
+    : {A}{f : Nat -> A -> A}{a : A}{n : Nat}{ni : NatInd {n}} ->
         Eq {A} (foldnat f a (suc n))       (f n (foldnat f a n)) ->
         Eq {A} (foldnat f a (suc (suc n))) (f (suc n) (foldnat f a (suc n)))
-    = \{A}{f}{a}{n}{dn} acc.
-        stepAs (foldnat f a (suc (suc n)))       (cong2 f (cong suc (natIndInFst {A}{f}{a}{n}{dn})) acc)
-       (stepAs (f (suc n) (f n (foldnat f a n))) (cong2 f refl (cong2 f (sym (natIndInFst {A}{f}{a}{n}{dn})) refl))
+    = \{A}{f}{a}{n}{ni} acc.
+        stepAs (foldnat f a (suc (suc n)))       (cong2 f (cong suc (natIndInFst {A}{f}{a}{n}{ni})) acc)
+       (stepAs (f (suc n) (f n (foldnat f a n))) (cong2 f refl (cong2 f (sym (natIndInFst {A}{f}{a}{n}{ni})) refl))
        (qed (f (suc n) (foldnat f a (suc n)))));
 let unrollFoldnat
-    : {A}{f : Nat -> A -> A}{a : A}{n : Nat}{dn : DNat {n}} ->
+    : {A}{f : Nat -> A -> A}{a : A}{n : Nat}{ni : NatInd {n}} ->
         Eq {A} (foldnat f a (suc n)) (f n (foldnat f a n))
-    = \{A}{f}{a}{n}{dn}. snd (proj2 (dn
-        (\n. Sigma Nat (\n. Pair (DNat {n}) (Eq {A} (foldnat f a (suc n)) (f n (foldnat f a n)))) {n})
+    = \{A}{f}{a}{n}{ni}. snd (proj2 (ni
+        (\n. Sigma Nat (\n. Pair (NatInd {n}) (Eq {A} (foldnat f a (suc n)) (f n (foldnat f a n)))) {n})
         (\{k} s. s
-          (\m. Sigma Nat (\n. Pair (DNat {n}) (Eq {A} (foldnat f a (suc n)) (f n (foldnat f a n)))) {suc m})
-          (\dfst dsnd. dpair (suc dfst) (pair (ds (fst dsnd)) (unrollFoldnatSuc {A}{f}{a}{dfst}{fst dsnd} (snd dsnd)))))
-        (dpair zero (pair dz refl))));
+          (\m. Sigma Nat (\n. Pair (NatInd {n}) (Eq {A} (foldnat f a (suc n)) (f n (foldnat f a n)))) {suc m})
+          (\dfst dsnd. dpair (suc dfst) (pair (si (fst dsnd)) (unrollFoldnatSuc {A}{f}{a}{dfst}{fst dsnd} (snd dsnd)))))
+        (dpair zero (pair zi refl))));
+
+let natIndSndIrrelevant
+    : {n : Nat}{A : U}{a : A}{f : A -> A}{ni : NatInd {n}} ->
+      {W : U}{v y : W}{w x : Pair A W -> W} -> Eq {A}
+        (fst (n (Pair A W) (\p. pair (f (fst p)) (w p)) (pair a v)))
+        (fst (n (Pair A W) (\p. pair (f (fst p)) (x p)) (pair a y)))
+    = \{n}{A}{a}{f}{ni}. ni
+        (\m. {W : U}{v y : W}{w x : Pair A W -> W} -> Eq {A}
+          (fst (m (Pair A W) (\p. pair (f (fst p)) (w p)) (pair a v)))
+          (fst (m (Pair A W) (\p. pair (f (fst p)) (x p)) (pair a y))))
+        (\{m} acc. cong f acc)
+        refl;

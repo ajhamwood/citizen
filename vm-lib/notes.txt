@@ -981,13 +981,13 @@ tt (Pair (DNat {suc zero}) (DNat {zero})) ((\{n : Nat}(S : Nat -> U -> U)(A : Na
   (\{a}{b} dn _. dn) dz dz
   (dpair zero (pair dz dz)))
 
-(\{n : Nat}(S : Nat -> U -> U)(A : Nat -> U){m : Nat}(f : Nat -> Nat -> Nat)
-  (reducer : {p q} -> DNat {p} -> S q (A p) -> S (f p q) (A (suc p)))(base : S m (A zero))(dn : DNat {n}).
+(\{n : Nat}(G : Nat -> U -> U)(H : Nat -> U){m : Nat}(f : Nat -> Nat -> Nat)
+  (reducer : {p q} -> DNat {p} -> G q (H p) -> G (f p q) (H (suc p)))(base : G m (A zero))(dn : DNat {n}).
   snd (proj2 (dn
-    (\n. Sigma Nat (\n. Pair (DNat {n}) (S (foldnat f m n) (A n))) {n})
+    (\n. Sigma Nat (\n. Pair (DNat {n}) (G (foldnat f m n) (H n))) {n})
     (\{k} s. s
---      (\o. Sigma Nat (\l. Pair (DNat {suc l}) (S (foldnat f m (suc l)) (A (suc l)))) {o})
-      (\o. Sigma Nat (\l. Pair (DNat {l}) (S (foldnat f m l) (A l))) {o})
+--      (\o. Sigma Nat (\l. Pair (DNat {suc l}) (G (foldnat f m (suc l)) (H (suc l)))) {o})
+      (\o. Sigma Nat (\l. Pair (DNat {l}) (G (foldnat f m l) (H l))) {o})
       (\dfst dsnd. dpair (suc dfst) (pair (ds {dfst} (fst dsnd))
         (reducer {dfst}{foldnat f m dfst} (fst dsnd) (snd dsnd))))))
     (dpair zero (pair dz base))))
@@ -1000,3 +1000,45 @@ ifoldnat {\m. Vec {foldnat const zero m} Bit}{suc (suc zero)}
     (\k. Vec {fst (k (Pair Nat Nat) (\p. pair (suc (fst p)) (fst p)) (pair zero zero))} Bit)
     (\v. vcons {Bit} I v) vnil)
   vnil (ds (ds dz))
+
+
+
+
+let J : {A}(x y : A){p : Eq {A} x y} -> U
+    = \{A} x y {p}. (B : {a : A} -> Eq {A} x a -> U) -> B refl -> B p;
+let jrefl : {A x} -> J x x {refl} = \JI jr. jr;
+
+\(x : Nat)(y : Nat)(p : Eq {Nat} x y){jp : J x y {p}}. tt (J (suc x) (suc y) {cong suc p}) (\JI jr. jp (\_. JI) jr)
+
+
+
+let foldvec
+    : {A : Nat -> U}{B n} -> ({m} -> B -> Vec {m} B -> A m -> A (suc m)) -> A zero -> Vec {n} B -> A n
+    = \{A}{B}{n} reducer base v. snd (proj2 (v
+        (\n. Sigma Nat (\n. Pair (Vec {n} B) (A n)) {n})
+        (dpair zero (pair vnil base))
+        (\{m} b s. s (\m. Sigma Nat (\n. Pair (Vec {n} B) (A n)) {suc m}) (\dfst dsnd. dpair
+          (suc dfst) (pair (vcons b (fst dsnd)) (reducer b (fst dsnd) (snd dsnd)))))));
+
+let foldltree
+    : {A : Nat -> U}{B n} -> ({m} -> LTree {m} B -> LTree {m} B -> A m -> A m -> A (suc m)) -> (B -> A zero) -> LTree {n} B -> A n
+    = \{A}{B}{n} reducer base tr. snd (proj2 (tr
+        (\n. Sigma Nat (\n. Pair (LTree {n} B) (A n)) {n})
+        (\a. dpair zero (pair (leaf a) (base a)))
+        (\{m} sl sr. sl
+          (\m. Sigma Nat (\n. Pair (LTree {n} B) (A n)) {suc m}) (\dfstl dsndl. sr
+            (\_. Sigma Nat (\n. Pair (LTree {n} B) (A n)) {suc dfstl}) (\_ dsndr. dpair
+              (suc dfstl) (pair
+                (node (fst dsndl) (fst dsndr))
+                (reducer (fst dsndl) (fst dsndr) (snd dsndl) (snd dsndr))))))));
+
+
+let natIndInFst
+    : {n : Nat}{ni : NatInd {n}}{A}{f : Nat -> A -> A}{a : A} ->
+        Eq {Nat} (fst (n (Pair Nat A) (\p. pair (suc (fst p)) (f (fst p) (snd p))) (pair zero a))) n
+    = \{n}{ni}. ni
+        (\n. {A : U}{f : Nat -> A -> A}{a : A} -> Eq {Nat} (fst (n (Pair Nat A) (\p. pair (suc (fst p)) (f (fst p) (snd p))) (pair zero a))) n)
+        (\{m}{A : U}{f : Nat -> A -> A}{a : A} acc. cong {Nat}{Nat}
+          {fst (m (Pair Nat A) (\p. pair {Nat}{A} (suc (fst p)) (f (fst p) (snd p))) (pair {Nat}{A} zero a))}
+          {m} suc acc) (\{A}{f}{a}. refl);
+natIndInFst

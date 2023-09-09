@@ -1,5 +1,5 @@
 # Description
-## Lexical format
+## Context-free Grammar
 ### Characters
 ```
     source           ::= char*
@@ -238,7 +238,7 @@ The Boehm-Berarducci encoding, known colloquially as the Church encoding, is qui
 ```
 ## Encoding dependent data types
 This encoding can be extended to dependent types by making the carrier type a function over the indices.
-### DWrap, DNats
+### DWrap, NatInd
 ```
     let DWrap : {T} -> T -> U
         = \{T} t. (W : T -> U) -> ((x : T) -> W x) -> W t;
@@ -246,18 +246,17 @@ This encoding can be extended to dependent types by making the carrier type a fu
         = \{V} v W w. w v;
     let undwrap : {T t} -> DWrap {T} t -> T = \{V}{v} w. w (\_. V) (\_. v);
 ```
-Currently researching dfoldnat, with a tentative type signature of:  
-`{n : Nat}(P : Nat -> U -> U)(A : Nat -> U){m : Nat}(f : Nat -> Nat -> Nat) ->`  
-`({p q} -> DNat {p} -> P q (A p) -> P (f q p) (A (suc p))) -> P m (A zero) ->`  
-` DNat {n} -> P (foldnat f m n) (A n)`
+Currently researching foldnatind, with a tentative type signature of:  
+`{n : Nat}(G : Nat -> U -> U)(H : Nat -> U){m : Nat}(f : Nat -> Nat -> Nat) ->`  
+`({p q} -> NatInd {p} -> G q (H p) -> G (f q p) (H (suc p))) -> G m (H zero) ->`  
+` NatInd {n} -> G (foldnat f m n) (H n)`
 ```
-    let DNat : {n} -> U
-        = \{n}. (DN : Nat -> U) -> ({m} -> DN m -> DN (suc m)) -> DN zero -> DN n;
-    let dz : DNat {zero}                    = \DN s z. z;
-    let ds : {n} -> DNat {n} -> DNat {suc n}
-        = \n DN s z. s (n DN s z);
-    let dadd : {m n} -> DNat {m} -> DNat {n} -> DNat {add m n}
-        = \{n=n} a b DN s z. a (\k. DN (add k n)) s (b DN s z);
+    let NatInd : {n} -> U
+        = \{n}. (NI : Nat -> U) -> ({m} -> NI m -> NI (suc m)) -> NI zero -> NI n;
+    let zi : NatInd {zero}                                  = \NI s z. z;
+    let si : {n} -> NatInd {n} -> NatInd {suc n}              = \n NI s z. s (n NI s z);
+    let addind : {m n} -> NatInd {m} -> NatInd {n} -> NatInd {add m n}
+        = \{n=n} a b NI s z. a (\k. NI (add k n)) s (b NI s z);
 ```
 ### Fin
 ```

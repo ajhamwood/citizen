@@ -49,9 +49,9 @@ function VM (options = {}) {
     constructor (o) { Object.assign(this, o) } get [Symbol.toStringTag] () { return "AST" }
   }
 
-  [ "RVar", "RLam", "RApp", "RU", "RPi", "RLet", "RHole",
-    "Var", "App", "Lam", "Pi", "U", "Let", "Meta", "AppPruning", "PostponedCheck", "MetaEntry",
-    "VRigid", "VFlex", "VLam", "VPi", "VU" ]
+  [ "RVar", "RLam", "RApp", "RU", "RPi", "RLet", "RHole", "RBot", "RExfalso",
+    "Var", "App", "Lam", "Pi", "U", "Let", "Bot", "Exfalso", "Meta", "AppPruning", "PostponedCheck", "MetaEntry",
+    "VRigid", "VFlex", "VLam", "VPi", "VU", "VBot" ]
     .forEach(name => this[name] = ({ [name]: class extends AST {
       constructor (o) { super(o); if (name in prettyPrint) this.toString = prettyPrint[name] }
       get [Symbol.toStringTag] () { return name }
@@ -70,8 +70,10 @@ function VM (options = {}) {
           string: `{${this.nameIcit} = ${this.arg}}` })[typeof this.nameIcit]})` },
       RU () { return "RU" },
       RPi () { return `RPi ${this.isImpl ? `{${this.name} : ${this.dom}}` : `(${this.name} : ${this.dom})`} -> ${this.cod}` },
-      RLet () { return `let ${this.name} : ${this.type} = ${this.term};\n${this.next}` },
+      RLet () { return `RLet ${this.name} : ${this.type} = ${this.term};\n${this.next}` },
       RHole () { return `{?}` },
+      RBot () { return "RBot" },
+      RExfalso () { return "RExfalso" },
 
       Var (ctx, names = AST.names(ctx)) { const lvl = names.length - this.ix - 1;
         if (lvl >= names.length) return "@" + this.ix;
@@ -113,6 +115,8 @@ function VM (options = {}) {
         name = fresh(names, this.name),
         str = `let ${name} : ${this.type.toString(ctx, names, 0)}\n    = ${this.term.toString(ctx, names, 0)};\n${this.next.toString(ctx, names.concat([name]), 0)}`;
         return prec > 0 ? `(${str})` : str },
+      Bot () { return "⊥" },
+      Exfalso () { return "exfalso" },
       Meta () { return `?${this.mvar}` },
       AppPruning (ctx, names = AST.names(ctx), prec) {
         const str = this.prun.reduce((str, mbIsImpl, i) => {
@@ -217,8 +221,10 @@ function VM (options = {}) {
             (s, t) => (this.setPos({ start: state.pos, end: t.pos }), { ...t, data: s.data + t.data.join("") }) ]) ]), Parser.option(this.ws)))(state) },
 
         atom (state) { return Parser.choice([
-          Parser.mapFull(Parser.guard(this.ident, data => !~["let", "U", "_"].findIndex(x => x === data)),
+          Parser.mapFull(Parser.guard(this.ident, data => !~["let", "Bot", "exfalso", "U", "_"].findIndex(x => x === data)),
             s => (this.setPos({ start: state.pos }), { ...s, data: new RVar({ name: s.data, pos: globalContext.pos }) })),
+          Parser.map(this.keyword("exfalso"), () => new RExfalso({ pos: globalContext.pos })),
+          Parser.map(this.keyword("Bot"), () => new RBot({ pos: globalContext.pos })),
           Parser.map(this.keyword("U"), () => new RU({ pos: globalContext.pos })),
           Parser.map(this.keyword("_"), () => new RHole({ pos: globalContext.pos })),
           s => this.encl(s, this.term, "parens") ])(state) },
@@ -367,6 +373,8 @@ function VM (options = {}) {
           pi ({ ctx, term, env }) { return new VPi({ name: term.name, dom: this.eval({ ctx, term: term.dom, env }), cls: { term: term.cod, env }, isImpl: term.isImpl }) },
           let ({ ctx, term, env }) { return this.eval({ ctx, term: term.next, env: env.concat([ this.eval({ ctx, env, term: term.term }) ]) }) },
           u () { return new VU() },
+          bot () { return new VBot() },
+          exfalso () { return new VRigid({ head: "exfalso", spine: [] }) },
           meta ({ term }) { return this.vMeta({ mvar: term.mvar }) },
           apppruning ({ ctx, term, env }) { return this.vAppPruning({ ctx, env, val: this.eval({ ctx, term: term.term, env }), prun: term.prun }) },
           postponedcheck ({ ctx, term, env }) { return this.vCheck({ ctx, env, checkvar: term.checkvar }) }
@@ -375,7 +383,7 @@ function VM (options = {}) {
         vApp: Evaluator.match({
           vlam ({ ctx, vfunc, varg }) { return this.cApp({ ctx, cls: vfunc.cls, val: varg }) },
           vflex ({ vfunc, varg, icit }) { return new VFlex({ mvar: vfunc.mvar, spine: vfunc.spine.concat([ [varg, icit] ]) }) },
-          vrigid ({ vfunc, varg, icit }) { return new VRigid({ lvl: vfunc.lvl, spine: vfunc.spine.concat([ [varg, icit] ]) }) },
+          vrigid ({ vfunc, varg, icit }) { return new VRigid({ head: vfunc.head, spine: vfunc.spine.concat([ [varg, icit] ]) }) },
         }, { scrut: [ "vfunc" ] }),
         vAppSp ({ ctx, val, spine }) { return spine.reduce((vfunc, [varg, icit]) => this.vApp({ ctx, vfunc, varg, icit }), val) },
         vMeta ({ mvar }) { let m = globalContext.metas.get(mvar); return "val" in m ? m.val : new VFlex({ mvar, spine: [] }) },
@@ -388,12 +396,14 @@ function VM (options = {}) {
         
         quote: Evaluator.match({
           vflex ({ ctx, lvl, val }) { return this.quoteSp({ ctx, lvl, term: new Meta({ mvar: val.mvar }), spine: val.spine }) },
-          vrigid ({ ctx, lvl, val }) { return this.quoteSp({ ctx, lvl, term: new Var({ ix: lvl - val.lvl - 1 }), spine: val.spine }) },
+          vrigid ({ ctx, lvl, val }) { return typeof val.head === "string" ? this.quoteSp({ ctx, lvl, term: new Exfalso(), spine: val.spine }) :
+            this.quoteSp({ ctx, lvl, term: new Var({ ix: lvl - val.head - 1 }), spine: val.spine }) },
           vlam ({ ctx, lvl, val }) { return new Lam({ name: val.name,
-            body: this.quote({ ctx, lvl: lvl + 1, val: this.cApp({ ctx, cls: val.cls, val: new VRigid({ lvl, spine: [] }) }) }), isImpl: val.isImpl }) },
+            body: this.quote({ ctx, lvl: lvl + 1, val: this.cApp({ ctx, cls: val.cls, val: new VRigid({ head: lvl, spine: [] }) }) }), isImpl: val.isImpl }) },
           vpi ({ ctx, lvl, val }) { return new Pi({ name: val.name, dom: this.quote({ ctx, lvl, val: val.dom }),
-            cod: this.quote({ ctx, lvl: lvl + 1, val: this.cApp({ ctx, cls: val.cls, val: new VRigid({ lvl, spine: [] }) }) }), isImpl: val.isImpl }) },
-          vu () { return new U() }
+            cod: this.quote({ ctx, lvl: lvl + 1, val: this.cApp({ ctx, cls: val.cls, val: new VRigid({ head: lvl, spine: [] }) }) }), isImpl: val.isImpl }) },
+          vu () { return new U() },
+          vbot () { return new Bot() }
         }, { scrut: [ "val" ] }),
         quoteSp ({ ctx, lvl, term, spine }) { return spine.reduce((func, [val, isImpl]) => new App({ func, arg: this.quote({ ctx, lvl, val }), isImpl }), term) },
         force ({ ctx, val }) { if (val.constructor.name === "VFlex") {
@@ -458,16 +468,16 @@ function VM (options = {}) {
         liftPRen: ({ occ, dom, cod, ren }) => ({ occ, dom: dom + 1, cod: cod + 1, ren: new Map(ren).set(cod, dom) }),
         skipPRen: ({ occ, dom, cod, ren }) => ({ occ, dom, cod: cod + 1, ren }),
         invertPRen ({ ctx, lvl, spine }) { return spine.reduce((acc, [val, isImpl]) => acc.then(([ dom, domvars, ren, prun, isLinear ], err) => { const fval = this.force({ ctx, val });
-          return fval.constructor.name !== "VRigid" || fval.spine.length !== 0 ?
-            err({ msg: "Unification error: Must substitute on unblocked variable" }) : domvars.has(fval.lvl) ?
-              [ dom + 1, domvars, (ren.delete(fval.lvl), ren), prun.concat([null]), false ] :
-              [ dom + 1, domvars.add(fval.lvl), ren.set(fval.lvl, dom), prun.concat([isImpl]), isLinear ] }),
+          return fval.constructor.name !== "VRigid" || typeof fval.head !== "number" || fval.spine.length !== 0 ?
+            err({ msg: "Unification error: Must substitute on unblocked variable" }) : domvars.has(fval.head) ?
+              [ dom + 1, domvars, (ren.delete(fval.head), ren), prun.concat([null]), false ] :
+              [ dom + 1, domvars.add(fval.head), ren.set(fval.head, dom), prun.concat([isImpl]), isLinear ] }),
           Result.pure([ 0, new Set(), new Map(), [], true ])).then(([ dom, {}, ren, prun, isLinear ]) =>
             ({ pren: { occ: null, dom, cod: lvl, ren }, mbPrun: isLinear ? prun : null })) },
 
         pruneTy ({ ctx, revPrun, vtype }) { return revPrun.reduceRight((res, mbIsImpl) => res.then(([go, val, pren, fval = this.force({ ctx, val })], err) => {
           if (fval.constructor.name !== "VPi") return err({ msg: "Internal error: type too low arity for given pruning" });
-          const appVal = this.cApp({ ctx, cls: fval.cls, val: new VRigid({ lvl: pren.cod, spine: [] }) });
+          const appVal = this.cApp({ ctx, cls: fval.cls, val: new VRigid({ head: pren.cod, spine: [] }) });
           return mbIsImpl === null ? [ go, appVal, this.skipPRen(pren) ] :
             this.rename({ ctx, pren, val: fval.dom }).then(({ rhs: dom }) => [ cod => go(new Pi({ name: fval.name, dom, cod, isImpl: fval.isImpl })), appVal, this.liftPRen(pren) ]) }),
           Result.pure([tm => tm, vtype, { occ: null, dom: 0, cod: 0, ren: new Map() }]))
@@ -483,10 +493,10 @@ function VM (options = {}) {
             })}) },
         pruneVFlex: ((OKRenaming, OKNonRenaming, NeedsPruning) => function ({ ctx, pren, mvar, spine }) {
           return spine.reduce((acc, [val, icit]) => acc.then(([sp, status], err) => { const fval = this.force({ ctx, val });
-            if (fval.constructor.name !== "VRigid" || fval.spine.length !== 0)
+            if (fval.constructor.name !== "VRigid" || typeof fval.head !== "number" || fval.spine.length !== 0)
               return status === NeedsPruning ? err({ msg: "Unification error: can only prune with variables" }) :
                 this.rename({ ctx, pren, val: fval }).then(({ rhs }) => [ sp.concat([ [rhs, icit] ]), OKNonRenaming ]);
-            else { const mbLvl = pren.ren.get(fval.lvl);
+            else { const mbLvl = pren.ren.get(fval.head);
               return (typeof mbLvl === "number") ? [ sp.concat([ [new Var({ ix: pren.dom - mbLvl - 1 }), icit] ]), status ] :
                 status !== OKNonRenaming ? [sp.concat([ [null, icit] ]), NeedsPruning] :
                   err({ msg: "Unification error: can only prune renamings" }) } }), Result.pure([ [], OKRenaming ]))
@@ -500,20 +510,22 @@ function VM (options = {}) {
         rename: Evaluator.match({
           vflex ({ ctx, pren, fval }) { return pren.occ === fval.mvar ? Result.throw({ msg: "Unification error: Occurs check" }) :
             this.pruneVFlex({ ctx, pren, mvar: fval.mvar, spine: fval.spine }) },
-          vrigid ({ ctx, pren, fval }) { return !pren.ren.has(fval.lvl) ? Result.throw({ msg: "Unification error: Variable escapes scope" }) :
-            this.renameSp({ ctx, pren, spine: fval.spine, term: new Var({ ix: pren.dom - pren.ren.get(fval.lvl) - 1 }) }) },
+          vrigid ({ ctx, pren, fval }) { return typeof fval.head === "string" ? this.renameSp({ ctx, pren, spine: fval.spine, term: new Exfalso() }) :
+            !pren.ren.has(fval.head) ? Result.throw({ msg: "Unification error: Variable escapes scope" }) :
+              this.renameSp({ ctx, pren, spine: fval.spine, term: new Var({ ix: pren.dom - pren.ren.get(fval.head) - 1 }) }) },
           vlam ({ ctx, pren, fval }) { return this.rename({ ctx, pren: this.liftPRen(pren),
-            val: this.cApp({ ctx, cls: fval.cls, val: new VRigid({ lvl: pren.cod, spine: [] }) }) })
+            val: this.cApp({ ctx, cls: fval.cls, val: new VRigid({ head: pren.cod, spine: [] }) }) })
             .then(({ rhs: body }) => ({ ctx, rhs: new Lam({ name: fval.name, body, isImpl: fval.isImpl }) })) },
           vpi ({ ctx, pren, fval }) { return this.rename({ ctx, pren, val: fval.dom })
               .then(({ rhs: dom }) => this.rename({ ctx, pren: this.liftPRen(pren),
-                val: this.cApp({ ctx, cls: fval.cls, val: new VRigid({ lvl: pren.cod, spine: [] }) }) })
+                val: this.cApp({ ctx, cls: fval.cls, val: new VRigid({ head: pren.cod, spine: [] }) }) })
                 .then(({ rhs: cod }) => ({ ctx, rhs: new Pi({ name: fval.name, dom, cod, isImpl: fval.isImpl }) }))) },
-          vu ({ ctx }) { return Result.pure({ ctx, rhs: new U() }) }
+          vu ({ ctx }) { return Result.pure({ ctx, rhs: new U() }) },
+          vbot ({ ctx }) { return Result.pure({ ctx, rhs: new Bot() }) }
         }, { scrut: [ { fval ({ ctx, val }) { return this.force({ ctx, val }) } } ] }),
         lams ({ ctx, lvl, vtype, term }) { return Array(lvl).fill().reduce((res, _, i) => res.then(([go, val, fval = this.force({ ctx, val })], err) =>
           fval.constructor.name !== "VPi" ? err({ msg: "Internal error: type too low arity for given lambda wrapping number" }) :
-            [ body => go(new Lam({ name: fval.name === "_" ? "x" + i : fval.name, body, isImpl: fval.isImpl })), this.cApp({ ctx, cls: fval.cls, val: new VRigid({ lvl: i, spine: [] }) }) ]),
+            [ body => go(new Lam({ name: fval.name === "_" ? "x" + i : fval.name, body, isImpl: fval.isImpl })), this.cApp({ ctx, cls: fval.cls, val: new VRigid({ head: i, spine: [] }) }) ]),
           Result.pure([s => s, vtype])).then(([go]) => ({ ctx, term: go(term) })) },
         solve ({ ctx, lvl, mvar, spine, val }) { return this.invertPRen({ ctx, lvl, spine })
           .then(({ pren, mbPrun }) => this.solveWithPRen({ ctx, lvl, mvar, pren, mbPrun, val })) },
@@ -535,30 +547,33 @@ function VM (options = {}) {
           if (spine0.length !== spine1.length) return Result.throw({ err: "Internal error: intersecting with uneven spines" });
           else return Result.pure(spine0.reduce((acc, [val0, icit0], i) => {
             const [ val1 ] = spine1[i], fval0 = this.force({ ctx, val: val0 }), fval1 = this.force({ ctx, val: val1 });
-            return fval0.constructor.name !== "VRigid" || fval0.spine.length !== 0 || fval1.constructor.name !== "VRigid" || fval1.spine.length !== 0 ||
-              acc === null ? null : acc.concat([ fval0.lvl === fval1.lvl ? icit0 : null ])
+            return fval0.constructor.name !== "VRigid" || typeof fval0.head !== "number" || fval0.spine.length !== 0 ||
+              fval1.constructor.name !== "VRigid" || typeof fval1.head !== "number" || fval1.spine.length !== 0 ||
+              acc === null ? null : acc.concat([ fval0.head === fval1.head ? icit0 : null ])
           }, [])).then(mbPrun => mbPrun === null ? this.unifySp({ ctx, lvl, spine0, spine1 }) :
             mbPrun.includes(null) ? this.pruneMeta({ ctx, prun: mbPrun, mvar }).then(() => {}) : undefined) },
 
         unify: Evaluator.match({
           "vu vu": () => Result.pure(),
+          "vbot vbot": () => Result.pure(),
           "vpi vpi" ({ ctx, lvl, fval0, fval1 }) { return fval0.isImpl !== fval1.isImpl ? Result.throw({ msg: "Unification error: Rigid mismatch" }) :
             this.unify({ ctx, lvl, val0: fval0.dom, val1: fval1.dom }).then(() => this.unify({ ctx, lvl: lvl + 1,
-              val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ lvl, spine: [] }) }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ lvl, spine: [] }) }) })) },
-          "vrigid vrigid": [ { guard ({ fval0, fval1 }) { return fval0.lvl === fval1.lvl },
+              val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ head: lvl, spine: [] }) }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ head: lvl, spine: [] }) }) })) },
+          "vrigid vrigid": [ { guard ({ fval0, fval1 }) { return (typeof fval0.head === "string" && typeof fval1.head === "string") || // Exfalso case
+              typeof fval0.head === "number" && typeof fval1.head === "number" && fval0.head === fval1.head },                         // LocalVar case
             clause ({ ctx, lvl, fval0, fval1 }) { return this.unifySp({ ctx, lvl, spine0: fval0.spine, spine1: fval1.spine }) } } ],
           "vflex vflex": [ { guard ({ fval0, fval1 }) { return fval0.mvar === fval1.mvar },
             clause ({ ctx, lvl, fval0, fval1 }) { return this.intersect({ ctx, lvl, mvar: fval0.mvar, spine0: fval0.spine, spine1: fval1.spine }) } },
             { guard: () => true, clause ({ ctx, lvl, fval0, fval1 }) {
               return this.flexFlex({ ctx, lvl, mvar0: fval0.mvar, spine0: fval0.spine, mvar1: fval1.mvar, spine1: fval1.spine }) } } ],
           "vlam vlam" ({ ctx, lvl, fval0, fval1 }) { return this.unify({ ctx, lvl: lvl + 1,
-            val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ lvl, spine: [] }) }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ lvl, spine: [] }) }) }) },
-          "vlam _" ({ ctx, lvl, fval0, fval1 }) { return this.unify({ ctx, lvl: lvl + 1, val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ lvl, spine: [] }) }),
-              val1: this.vApp({ ctx, vfunc: fval1, varg: new VRigid({ lvl, spine: [] }), icit: fval0.isImpl }) }) },
+            val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ head: lvl, spine: [] }) }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ head: lvl, spine: [] }) }) }) },
+          "vlam _" ({ ctx, lvl, fval0, fval1 }) { return this.unify({ ctx, lvl: lvl + 1, val0: this.cApp({ ctx, cls: fval0.cls, val: new VRigid({ head: lvl, spine: [] }) }),
+              val1: this.vApp({ ctx, vfunc: fval1, varg: new VRigid({ head: lvl, spine: [] }), icit: fval0.isImpl }) }) },
           "vflex _": [ { guard ({ fval1 }) { return fval1.constructor.name !== "VLam" },
             clause ({ ctx, lvl, fval0, fval1 }) { return this.solve({ ctx, lvl, mvar: fval0.mvar, spine: fval0.spine, val: fval1 }) } } ],
           "_" ({ ctx, lvl, fval0, fval1 }) { return fval1.constructor.name === "VLam" ? this.unify({ ctx, lvl: lvl + 1,
-            val0: this.vApp({ ctx, vfunc: fval0, varg: new VRigid({ lvl, spine: [] }), icit: fval1.isImpl }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ lvl, spine: [] }) }) }) :
+            val0: this.vApp({ ctx, vfunc: fval0, varg: new VRigid({ head: lvl, spine: [] }), icit: fval1.isImpl }), val1: this.cApp({ ctx, cls: fval1.cls, val: new VRigid({ head: lvl, spine: [] }) }) }) :
             fval1.constructor.name === "VFlex" ? this.solve({ ctx, lvl, mvar: fval1.mvar, spine: fval1.spine, val: fval0 }) :
               Result.throw({ msg: "Unification error: Rigid mismatch" }) }
         }, { scrut: [ { fval0 ({ ctx, val0 }) { return this.force({ ctx, val: val0 }) } }, { fval1 ({ ctx, val1 }) { return this.force({ ctx, val: val1 }) } } ] }),
@@ -566,7 +581,7 @@ function VM (options = {}) {
           else return spine0.reduce((acc, [val0], i) => acc.then(() => this.unify({ ctx, lvl, val0, val1: spine1[i][0] })), Result.pure()) },
 
         bind ({ ctx, name, vtype, isNewBinder = false }) { return { ...ctx,
-          env: ctx.env.concat([ new VRigid({ lvl: ctx.lvl, spine: [] }) ]),
+          env: ctx.env.concat([ new VRigid({ head: ctx.lvl, spine: [] }) ]),
           names: isNewBinder ? ctx.names : new Map(ctx.names).set(name, [ ctx.lvl, vtype ]),
           lvl: ctx.lvl + 1, prun: ctx.prun.concat([false]),
           path: ctx.path.concat([{ bind: { name, type: this.quote({ ctx, lvl: ctx.lvl, val: vtype }) } }]) } },
@@ -607,7 +622,7 @@ function VM (options = {}) {
             guard: ({ rterm, fvtype }) => rterm.nameIcit === fvtype.isImpl || rterm.nameIcit === fvtype.name && fvtype.isImpl,
             clause ({ ctx, rterm, fvtype }) { return (rterm.mbType === null ? Result.pure() : this.check({ ctx, rterm: rterm.mbType, vtype: new VU() })
               .then(({ term: type }) => this.unifyCatch({ ctx, val0: this.eval({ ctx, env: ctx.env, term: type }), val1: fvtype.dom, unifyErr: this.LamBinderType })))
-              .then(() => this.check({ ctx: this.bind({ ctx, name: rterm.name, vtype: fvtype.dom }), rterm: rterm.body, vtype: this.cApp({ ctx, cls: fvtype.cls, val: new VRigid({ lvl: ctx.lvl, spine: [] }) }) }))
+              .then(() => this.check({ ctx: this.bind({ ctx, name: rterm.name, vtype: fvtype.dom }), rterm: rterm.body, vtype: this.cApp({ ctx, cls: fvtype.cls, val: new VRigid({ head: ctx.lvl, spine: [] }) }) }))
               .then(({ term: body }) => ({ ctx, term: new Lam({ name: rterm.name, body, isImpl: fvtype.isImpl }) })) } } ],
           "rvar vpi": [ {
             guard ({ ctx, rterm, fvtype }) { const mbVtype = ctx.names.get(rterm.name)?.[1];
@@ -623,7 +638,7 @@ function VM (options = {}) {
           "rhole _": [ { guard: ({ fvtype }) => !["VPi", "VFlex"].includes(fvtype.constructor.name), clause ({ ctx, fvtype }) { return Result.pure({ ctx, term: this.freshMeta({ ctx, vtype: fvtype }).meta }) } } ],
           _: [ { guard: ({ fvtype }) => fvtype.constructor.name === "VPi" && fvtype.isImpl,
             clause ({ ctx, rterm, fvtype }) { return this.check({ ctx: this.bind({ ctx, name: fvtype.name, vtype: fvtype.dom, isNewBinder: true }),
-              rterm, vtype: this.cApp({ ctx, cls: fvtype.cls, val: new VRigid({ lvl: ctx.lvl, spine: [] }) }) })
+              rterm, vtype: this.cApp({ ctx, cls: fvtype.cls, val: new VRigid({ head: ctx.lvl, spine: [] }) }) })
                 .then(({ term: body }) => ({ ctx, term: new Lam({ name: fvtype.name, body, isImpl: true }) })) } },
             { guard: ({ fvtype }) => fvtype.constructor.name === "VFlex",
               clause ({ ctx, rterm, fvtype }) {
@@ -668,7 +683,11 @@ function VM (options = {}) {
               .then(({ term }) => this.infer({ ctx: this.define({ ctx, name: rterm.name, term, val: this.eval({ ctx, term, env: ctx.env }), type, vtype: cvtype }), rterm: rterm.next })
                 .then(({ term: next, vtype }) => ({ ctx, term: new Let({ name: rterm.name, type, term, next }), vtype }))) }) },
           rhole ({ ctx }) { const vtype = this.eval({ ctx, env: ctx.env, term: this.freshMeta({ ctx, vtype: new VU() }).meta });
-          return Result.pure({ ctx, vtype, term: this.freshMeta({ ctx, vtype }).meta }) }
+            return Result.pure({ ctx, vtype, term: this.freshMeta({ ctx, vtype }).meta }) },
+          rbot ({ ctx }) { return Result.pure({ ctx, term: new Bot(), vtype: new VU() }) },
+          rexfalso ({ ctx }) { return Result.pure({ ctx, term: new Exfalso(), vtype: this.eval({ ctx, env: ctx.env,
+            term: new Pi({ name: "A", dom: this.freshMeta({ ctx, vtype: new VU() }).meta, isImpl: true,
+              cod: new Pi({ name: "_", dom: new Bot(), cod: new Var({ ix: 1 }), isImpl: false }) }) }) }) }
         }, { decorate: ({ rterm }) => globalContext.pos = rterm.pos, scrut: [ "rterm" ] }),
 
         doElab ({ rterm }) {
@@ -705,8 +724,7 @@ function VM (options = {}) {
           let lines = globalContext.source.split(/\r\n?|\n/);
           return err({ message: `${msg}\n${lines[globalContext.pos[0][0] - 1]}\n${"-".repeat(globalContext.pos[0][1] - 1)}${
             "^".repeat(globalContext.pos[1][1] - globalContext.pos[0][1])} ${globalContext.pos.join("-")}` }) }
-      })) this[k] = debug(["normalForm", "typecheck", "elaborate", "returnAll"].includes(k) ?
-        function (...args) { phase = "evaluator"; return fn.apply(this, args) } : fn, k, this)  // TODO: trampoline
+      })) this[k] = debug(k === "doElab" ? function (...args) { phase = "evaluator"; return fn.apply(this, args) } : fn, k, this)  // TODO: trampoline
     }
   }
 

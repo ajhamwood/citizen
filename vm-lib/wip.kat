@@ -1,0 +1,7 @@
+let Void : U                                          = Bot;
+let absurd : {A} -> Void -> A                         = exfalso;
+let Eq : {T} -> T -> T -> U                           = \{T} x y. (P : T -> U) -> P x -> P y;
+--let refl : {T t} -> Eq {T} t t                        = \P pt. pt;
+let absurdIsUnique : {C}(h : Void -> C)(w : Void) -> Eq {C} (absurd w) (h w)
+    = \{C} h w. exfalso w;
+absurdIsUnique

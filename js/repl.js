@@ -29,7 +29,7 @@ $.targets({
       this.debounce = setTimeout(async () => {  // disable/enable run
         let source = sourceEl.value, err;
         try {
-          const { highlight, returnAll } = await VM().import({ code: sourceEl.value });
+          const { highlight, returnAll } = await VM({ debug: { showPhase: false } }).import({ code: sourceEl.value });
           if (highlight.length !== source.length) throw new Error();
           this.TC = returnAll;
           localStorage.setItem("highlight", { code: sourceEl.value, highlight });

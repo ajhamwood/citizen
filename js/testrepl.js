@@ -14,7 +14,7 @@ $.targets({
         if ("highlight" in e.data) repl.emit("resp_parse", e.data);
         else if ("result" in e.data) repl.emit("resp_elab", e.data)
       } }, this.TCWorker);
-      this.TCWorker.postMessage({ type: "init" });
+      this.TCWorker.postMessage({ type: "init", debug: { showPhase: false } });
 
       const highlightEl = $("#highlight"), sourceEl = $("#source"), bodyEl = $("body");
       sourceEl.style.height = getComputedStyle(sourceEl).getPropertyValue("height");
