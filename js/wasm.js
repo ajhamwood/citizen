@@ -284,7 +284,7 @@ function float64 (v) { return new f64_atom(v) }  // float64 -> Float64
 
 // leb128-encoded integers in N bits
 // unsigned range 0 to (2 ** N) - 1
-// signed range -(2 ** (N -1)) to (2 ** (N - 1)) - 1
+// signed range -(2 ** (N - 1)) to (2 ** (N - 1)) - 1
 function varuint1 (v) { return v ? varuint1_1 : varuint1_0 }
 // uint7 -> VarUint7
 function varuint7 (v) {
@@ -310,8 +310,7 @@ function varint7 (value) {
   assert(value >= -64 && value <= 63, "value", value, "< -64 || value > 63");
   return new u8_atom(T.varint7, value < 0 ? (128 + value) : value)
 }
-// int64 -> [uint8]
-// FIXME: "broken for values larger than uint32" - @github.com/rsms
+// int32 -> [uint8]
 function encVarIntN (v) {
   const bytes = [];  // [uint8]
   while (true) {
@@ -325,6 +324,20 @@ function encVarIntN (v) {
   }
   return bytes
 }
+// int64 -> [uint8]
+function encVarIntNBig (v) {
+  const bytes = [];  // [uint8]
+  while (true) {
+    let b = Number(v & 0x7fn);
+    if (-64 <= v && v < 64) {
+      bytes.push(b);
+      break
+    }
+    v >>= 7n;  // Signed right shift
+    bytes.push(b | 0x80)
+  }
+  return bytes
+}
 // int32 -> VarInt32
 function varint32 (value) {
   assert(value >= -0x8000_0000 && value <= 0x7fff_ffff, "value", value, "< -0x8000_0000 || value > 0x7fff_ffff");
@@ -334,7 +347,7 @@ function varint32 (value) {
 function varint64 (value) {
   assert(value >= -0x8000_0000_0000_0000n && value <= 0x7fff_ffff_ffff_ffffn,
     "value", value, "< -0x8000_0000_0000_0000n || value > 0x7fff_ffff_ffff_ffffn");
-  return new bytesval_atom(T.varint64, value, encVarIntN(value))
+  return new bytesval_atom(T.varint64, value, encVarIntNBig(value))
 }
 
 
@@ -458,7 +471,7 @@ class i32ops extends type_atom {
 class i64ops extends type_atom {
   // Constants
   constv (v) { return new instr_imm1(0x42, this, v) }                           // VarInt64 -> Op I64
-  const (v) { return this.constv(varint64(v)) }                                 // int64 -> Op I64
+  const (v) { return this.constv(varint64(BigInt(v))) }                         // int64 -> Op I64
 
   // Memory
   load (mi, addr) { return memload(0x29, this, mi, addr) }                      // (MemImm, Op Int) -> Op I64

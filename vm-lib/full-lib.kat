@@ -12,7 +12,7 @@ let dcomp
       ({x : A}(y : B x) -> C {x} y) -> (g : (x : A) -> B x) ->
       (x : A) -> C {x} (g x)
     = \f g x. f {x} (g x);
-let comp : {A B C : U} -> (B -> C) -> (A -> B) -> A -> C  = \f g x. f (g x);
+let comp : {A B C : U} -> (B -> C) -> (A -> B) -> A -> C = \f g x. f (g x);
 
 let dcomp2
     : {A1 : U}{A2 : A1 -> U}{B : (x : A1) -> A2 x -> U}
@@ -73,6 +73,9 @@ let absurdIsUnique : {C}(h : Void -> C)(w : Bot) -> Eq {C} (exfalso w) (h w)
 
 -- tt (Eq {Nat} zero zero -> Bot) (\zisz. zisz (\_. Bot) _)
 
+--let Void : U                                        = (V : U) -> V;
+--let absurd : {A} -> Void -> A                       = \V. _;
+
 -- Unit
 
 let Unit : U                                          = (T : U) -> T -> T;
@@ -105,6 +108,8 @@ let add : Nat -> Nat -> Nat                           = \a b N s z. a N s (b N s
 let mul : Nat -> Nat -> Nat                           = \a b N s z. a N (b N s) z;
 let pred : Nat -> Nat
     = \n. snd {Nat} (n _ (\p. pair (suc (fst p)) (fst p)) (pair zero zero));
+let pred : Nat -> Nat
+    = \n N s z. n ((N -> N) -> N) (\c k. k (c s)) (\_. z) (\x. x);
 let minus : Nat -> Nat -> Nat                         = \m n. n _ pred m;
 let eqz : Nat -> Bit                                  = \n. n _ (\_. O) I;
 let diff : Nat -> Nat -> Nat                          = \m n. add (minus m n) (minus n m);
@@ -116,6 +121,16 @@ let foldnat : {A} -> (Nat -> A -> A) -> A -> Nat -> A
 --let pred : Nat -> Nat = foldnat const zero;
 let fact : Nat -> Nat = \n. foldnat {Nat} (\n. mul (suc n)) (suc zero) n;
 -- fact (suc (suc (suc zero)))
+
+
+-- Difference Nats
+
+let DiffNat : U                                       = Nat -> Nat;
+let zeroD : DiffNat                                   = id;
+let sucD : DiffNat -> DiffNat                         = comp suc;
+let addD : DiffNat -> DiffNat -> DiffNat              = comp;
+let fromDiffNat : DiffNat -> Nat                      = apply zero;
+let toDiffNat : Nat -> DiffNat                        = add;
 
 
 -- Identity
@@ -149,6 +164,17 @@ let right : {A B} -> B -> Either A B                  = \b E l r. r b;
 let either : {C A B} -> (A -> C) -> (B -> C) -> Either A B -> C = \{C} f g eab. eab C f g;
 
 
+-- These
+
+let These : U -> U -> U
+    = \A B. (T : U) -> (A -> T) -> (B -> T) -> (A -> B -> T) -> T;
+let this : {A B} -> A -> These A B                    = \a T l r lr. l a;
+let that : {A B} -> B -> These A B                    = \b T l r lr. r b;
+let both : {A B} -> A -> B -> These A B               = \a b T l r lr. lr a b;
+let these : {T A B} -> (A -> T) -> (B -> T) -> (A -> B -> T) -> These A B -> T
+    = \{T} l r lr t. t T l r lr;
+
+
 -- Lists
 
 let List : U -> U                                     = \A. (L : U) -> L -> (A -> L -> L) -> L;
@@ -161,13 +187,16 @@ let foldlist : {A B} -> (List A -> A -> B -> B) -> B -> List A -> B
     = \{A}{B} reducer base l. snd {List A} (l (Pair (List A) B) (pair nil base)
         (\a p. pair (cons a (fst p)) (reducer (fst p) a (snd p))));
 
-let listHead : {A} -> List A -> A = \{A} l. l A _ (\a as. a);
-let listTail : {A} -> List A -> List A
-    = \{A} l. snd (l (Pair (List A) (List A)) (pair nil nil)
-        (\a acc. pair (cons a (fst acc)) (fst acc)));
+let listHead : {A} -> List A -> Maybe A = \{A} l. l (Maybe A) nothing (\a as. just a);
+let listTail : {A} -> List A -> Maybe (List A)
+    = \{A} l. snd (l (Pair (List A) (Maybe (List A))) (pair nil nothing)
+        (\a p. pair (cons a (fst p)) (just (fst p))));
 --let listTail = \{A}. foldlist {A}{List A} (\l _ _. l) nil;
+let splitListAtHead : {A} -> List A -> Maybe (Pair A (List A))
+    = \{A} l. snd (l (Pair (List A) (Maybe (Pair A (List A)))) (pair nil nothing)
+        (\a p. pair (cons a (fst p)) (just (pair a (fst p)))));
 let listLookup : {A}(l : List A) -> Fin {length l} -> A
-    = \{A} l fn. listHead (fn (\n. List A) (\acc. listTail acc) l);
+    = \{A} l fn. (fn (\n. List A) (\acc. listTail acc) l) A _ (\a as. a);
 
 let listUpdate : {A} -> Nat -> List A -> A -> List A
     = \{A} n l newA. foldlist {A}{List A} (\l a acc. cons ((diff n (length l)) A (\_. a) newA) acc) nil l;
@@ -181,7 +210,9 @@ let Nonempty : U -> U                                 = \A. (N : U) -> (A -> N) 
 let sing : {A} -> A -> Nonempty A                     = \a N s c. s a;
 let ncons : {A} -> A -> Nonempty A -> Nonempty A      = \a as N s c. c a (as N s c);
 
-let nelToList : {A} -> Nonempty A -> List A           = \{A} nel. nel (List A) (\a. cons a nil) cons;
+let nonemptyToList : {A} -> Nonempty A -> List A      = \{A} n. n (List A) (\a. cons a nil) cons;
+let splitNonemptyAtHead : {A} -> Nonempty A -> Pair A (List A)
+    = \{A} n. n (Pair A (List A)) (\a. pair a nil) (\a p. pair a (p _ cons));
 
 
 -- Binary Trees
@@ -190,12 +221,37 @@ let BTree : U -> U                                    = \A. (B : U) -> (A -> B -
 let bleaf : {A} -> A -> BTree A                       = \a B n l. l a;
 let bnode : {A} -> A -> BTree A -> BTree A -> BTree A = \a ta tb B n l. n a (ta B n l) (tb B n l);
 
+
 -- Rose Trees
 
-let RTree : U -> U                                    = \A. (R : U) -> (R -> R -> R) -> (A -> R -> R) -> R -> R;
-let rnil : {A} -> RTree A                             = \R t l n. n;
-let rleaf : {A} -> A -> RTree A -> RTree A            = \a r R t l n. l a (r R t l n);
-let rnode : {A} -> RTree A -> RTree A -> RTree A      = \tx ty R t l n. t (tx R t l n) (ty R t l n);
+let RTree : U -> U                                    = \A. (R : U) -> (A -> R) -> R -> (R -> R -> R) -> R;
+let rleaf : {A} -> A -> RTree A                       = \a R l n c. l a;
+let rnil : {A} -> RTree A                             = \R l n c. n;
+let rcons : {A} -> RTree A -> List (RTree A) -> RTree A = \r rs R l n c. c (r R l n c) (rs R n (\a. c (a R l n c)));
+-- rcons (rcons rnil (cons (rcons (rleaf I) nil) nil)) (cons (rleaf O) nil)
+
+let spread : {A} -> RTree A -> List (RTree A)
+    = \{A} r. snd (r (Pair (RTree A) (List (RTree A)))
+        (\a. pair (rleaf a) (cons (rleaf a) nil)) (pair rnil nil)
+        (\p1 p2. pair (rcons (fst p1) (snd p2)) (cons (fst p1) (snd p2))));
+
+let RTree : U -> U                                    = \A. (R : U) -> (A -> R) -> (R -> R) -> (R -> R -> R) -> R;
+let rleaf : {A} -> A -> RTree A                       = \a R l s c. l a;
+let rsing : {A} -> RTree A -> RTree A                 = \r R l s c. s (r R l s c);
+let rcons : {A} -> RTree A -> Nonempty (RTree A) -> RTree A
+    = \r rs R l s c. c (r R l s c) (rs R (\a. a R l s c) (\a. c (a R l s c)));
+
+let spread : {A} -> RTree A -> Nonempty (RTree A) = \{A} r. (snd (r
+    (Pair (RTree A) (Either (RTree A) (Nonempty (RTree A))))
+    (\a. pair (rleaf a) (left (rleaf a)))
+    (\p. pair (rsing (fst p)) (right (sing ((snd p) (RTree A) rsing (const (fst p))))))
+    (\p1 p2. pair
+        (rcons (fst p1) ((snd p2) (Nonempty (RTree A)) sing id))
+        (right (ncons (fst p1) ((snd p2) (Nonempty (RTree A)) sing id))))))
+    (Nonempty (RTree A)) sing id;
+let bunch : {A} -> Nonempty (RTree A) -> RTree A
+    = \{A} n. snd (n (Pair (Nonempty (RTree A)) (RTree A))
+        (\r. pair (sing r) r) (\r p. pair (ncons r (fst p)) (rcons r (fst p))));
 
 
 -- Continuations
@@ -279,9 +335,9 @@ let cmpBitVec : {n} -> Vec {n} Bit -> Vec {n} Bit -> Bit
 
 let Tuple : List U -> U
     = \L. (T : List U -> U) -> T nil -> ({A As} -> A -> T As -> T (cons A As)) -> T L;
-let tupnil : Tuple nil = \T n c. n;
-let tupcons : {A As} -> A -> Tuple As -> Tuple (cons A As) = \a tas T n c. c a (tas T n c);
---tupcons {Nat}{cons Bit nil} zero (tupcons I tupnil)
+let tnil : Tuple nil = \T n c. n;
+let tcons : {A As} -> A -> Tuple As -> Tuple (cons A As) = \a tas T n c. c a (tas T n c);
+--tcons {Nat}{cons Bit nil} zero (tcons I tnil)
 
 
 -- Height-indexed Binary Leaf-only Trees
@@ -482,14 +538,20 @@ let bitToNat : Bit -> Nat = \b. b Nat (suc zero) zero;
 
 let Functor : (U -> U) -> U
     = \(F : U -> U). {T} -> ((map : {A B} -> (A -> B) -> F A -> F B) -> F T) -> F T;
+let map : {G : U -> U}{fun : Functor G}{A B} -> (A -> B) -> G A -> G B
+    = \{fun=fun} f ga. fun (\map. map f ga);
+--map {Maybe}{maybeFunctor} not (just O)
 
-let maybeFunctor : Functor Maybe                      = \F. F (\fn ma M n j. ma M n (\a. j (fn a)));
+let maybeFunctor : Functor Maybe                      = \F. F (\f ma M n j. ma M n (\a. j (f a)));
 -- maybeFunctor (\map. map not (just O))
 
-let listFunctor : Functor List                        = \F. F (\fn la L n c. la L n (\a as. c (fn a) as));
+let listFunctor : Functor List                        = \F. F (\f la L n c. la L n (\a as. c (f a) as));
 -- listFunctor (\map. map not (cons O (cons I nil)))
 
-let ltreeFunctor : Functor LTree                      = \F. F (\fn ta T l n. ta T (\a. l (fn a)) n);
+let contFunctor : {W} -> Functor (Cont W)             = \F. F (\f ca C c. ca C (\k. c (\g. k (\x. g (f x)))));
+-- run (contFunctor (\map. map not (cont (\k. k O)))) id
+
+let ltreeFunctor : Functor LTree                      = \F. F (\f ta T l n. ta T (\a. l (f a)) n);
 -- ltreeFunctor (\map. map not (initWord (si (si zi))))
 
 
@@ -498,17 +560,25 @@ let ltreeFunctor : Functor LTree                      = \F. F (\fn ta T l n. ta 
 let App : (U -> U) -> U
     = \(F : U -> U). {T} -> ((pure : {A} -> A -> F A) ->
         (ap : {A B} -> F (A -> B) -> F A -> F B) -> F T) -> F T;
+let pure : {G : U -> U}{app : App G}{A} -> A -> G A
+    = \{app=app} a. app (\pure ap. pure a);
+let ap : {G : U -> U}{app : App G}{A B} -> G (A -> B) -> G A -> G B
+    = \{app=app} gf ga. app (\pure ap. ap gf ga);
+--ap {Maybe}{maybeApp} (pure {Maybe}{maybeApp} not) (pure {Maybe}{maybeApp} O)
 
 let maybeApp : App Maybe
     = \A. A just (\mf ma M n j. mf M n (\f. ma M n (\x. j (f x))));
 let contApp : {W} -> App (Cont W)
     = \A. A (\x. cont (\k. k x)) (\cf ca. cont (\k. run ca (\v. run cf (\f. k (f v)))));
+--run (contApp (\pure ap. ap (pure not) (pure O))) id
 
 let appFunctor : {F} -> App F -> Functor F
-    = \app F. app (\pure ap. F (\{A}{B} fn fa. ap {A}{B} (pure fn) fa));
+    = \app F. app (\pure ap. F (\{A}{B} f fa. ap {A}{B} (pure f) fa));
+let listApp : App List
+    = \A. A (\x. cons x nil) (\fs xs. fs _ nil (\f bs. concat (xs _ nil (\a as. cons (f a) as)) bs));
 let listApp : App List
     = \A. A (\x. cons x nil) (\fs xs. fs _ nil (\f bs. concat (listFunctor (\map. map f xs)) bs));
--- listApp (\pure ap. ap (cons not (cons (\x. x) nil)) (cons O (cons I nil)))
+-- listApp (\pure ap. ap (cons not (pure id)) (cons O (pure I)))
 
 let appComp : {F G : U -> U} -> App F -> App G -> App (\X. F (G X))
     = \{F}{G} appF appG A. A
@@ -525,9 +595,19 @@ let appComp : {F G : U -> U} -> App F -> App G -> App (\X. F (G X))
 let Monad : (U -> U) -> U
     = \(F : U -> U). {T} -> ((return : {A} -> A -> F A) ->
         (bind : {A B} -> F A -> (A -> F B) -> F B) -> F T) -> F T;
+let return : {G : U -> U}{mon : Monad G}{A} -> A -> G A
+    = \{mon=mon} a. mon (\ret bind. ret a);
+let bind : {G : U -> U}{mon : Monad G}{A B} -> G A -> (A -> G B) -> G B
+    = \{mon=mon} ga mf. mon (\ret bind. bind ga mf);
+--bind {Maybe}{maybeMonad} (return {Maybe}{maybeMonad} O) just
 
+let maybeMonad : Monad Maybe                          = \M. M just (\m f. m _ nothing f);
+let listMonad : Monad List
+    = \M. M (\x. cons x nil) (\m f. m _ nil (\x xs. concat (f x) xs));
+--listMonad (\return bind. bind (cons zero (return (suc zero))) (\n. cons n (return (suc n))))
 let contMonad : {W} -> Monad (Cont W)
     = \F. F (\x. cont (\k. k x)) (\m f. cont (\k. run m (\v. run (f v) k)));
+--run {Nat} (contMonad (\return bind. bind (return zero) (\x. cont (\k. k (k x))))) suc
 
 let monadApp : {F} -> Monad F -> App F
     = \monad A. monad (\return bind. A return (\fs xs. bind fs (\f. bind xs (\x. return (f x)))));
@@ -542,21 +622,24 @@ let mapM : {A B}{M : U -> U}{monad : Monad M} -> (A -> M B) -> List A -> M (List
 -- Traversables
 
 let Trav : (U -> U) -> U
-    = \F. (S : U -> U){T} -> ((traverse : {G : U -> U}{app : App G}{B A} -> (A -> G B) -> F A -> G (F B)) -> S (F T)) -> S (F T);
+    = \F. {S : U -> U}{T} -> ((traverse : {G : U -> U}{app : App G}{B A} ->
+        (A -> G B) -> F A -> G (F B)) -> S (F T)) -> S (F T);
 let maybeTrav : Trav Maybe
-    = \_ T. T (\{G}{app}{B} f ma. app {Maybe B} (\pure ap. ma (G (Maybe B)) (pure nothing) (\a. ap (pure just) (f a))));
+    = \T. T (\{G}{app}{B} f ma. app {Maybe B} (\pure ap. ma (G (Maybe B))
+        (pure nothing) (\a. ap (pure just) (f a))));
 let listOfNonzero : Nat -> List Nat = \n. n (List Nat) (\s. cons n nil) nil;
---maybeTrav List (\traverse. traverse {app=listApp} listOfNonzero (just (suc zero)))
+--maybeTrav {List} (\traverse. traverse {app=listApp} listOfNonzero (just (suc zero)))
 
 let listTrav : Trav List
-    = \_ T. T (\{G}{app}{B} f la. app {List B} (\pure ap. la (G (List B)) (pure nil) (\a as. ap (ap (pure cons) (f a)) as)));
-let maybeNonzero : Nat -> Maybe Nat = \n. n (Maybe Nat) (\s. just n) nothing;
---listTrav Maybe (\traverse. traverse {app=maybeApp} maybeNonzero (cons (suc zero) nil))
+    = \T. T (\{G}{app}{B} f la. app {List B} (\pure ap. la (G (List B))
+        (pure nil) (\a as. ap (ap (pure cons) (f a)) as)));
+let maybeNonzero : Nat -> Maybe Nat = \n. n (Maybe Nat) (\_. just n) nothing;
+--listTrav {Maybe} (\traverse. traverse {app=maybeApp} maybeNonzero (cons (suc zero) nil))
 
 let vecTrav : {n} -> Trav (Vec {n})
-    = \{n} _ T. T (\{G}{app}{B} f va. app {Vec {n} B} (\pure ap. va (\n. G (Vec {n} B))
+    = \{n} T. T (\{G}{app}{B} f va. app {Vec {n} B} (\pure ap. va (\n. G (Vec {n} B))
         (pure vnil) (\{m} a as. ap (ap (pure vcons) (f a)) as)));
---vecTrav Maybe (\traverse. traverse {app=maybeApp} maybeNonzero (vcons (suc zero) vnil))
+--vecTrav {Maybe} (\traverse. traverse {app=maybeApp} maybeNonzero (vcons (suc zero) vnil))
 
 let ltreeTrav : {n} -> Trav (LTree {n})
     = \T. T (\{F}{app}{B} f ta. app (\pure ap. ta (\n. F (LTree {n} B))
@@ -567,7 +650,53 @@ let maybeO : Bit -> Maybe Unit = \b. b (Maybe Unit) nothing (just tt);
 let mapM : {F}{trav : Trav F}{M}{monad : Monad M}{B A} -> (A -> M B) -> F A -> M (F B)
     = \{F}{trav}{M}{monad} f as. trav M (\traverse. traverse {app=monadApp monad} f as);
 --run {List Bit} (mapM {trav=listTrav}{monad=contMonad}
---    (\b. cont (\k. k (not b))) (cons I (cons O nil))) (\x. x)
+--    (\b. cont (\k. k (not b))) (cons I (cons O nil))) id
+
+
+-- Alternative / MonadPlus
+
+let Alt : (U -> U) -> U
+    = \F. {T} -> ((empty : {A} -> F A) -> (alt : {A} -> F A -> F A -> F A) -> F T) -> F T;
+let maybeAlt : Alt Maybe
+    = \A. A nothing (\lm rm. lm _ (rm _ nothing just) just);
+--maybeAlt (\empty alt. alt empty (just zero))
+
+
+-- Kan extensions
+
+let Yoneda : (U -> U) -> U -> U
+    = \F A. {Z} -> ((runYoneda : {B} -> (A -> B) -> F B) -> F Z) -> F Z;
+let yonedaFunctor : {G : U -> U} -> Functor (Yoneda G)
+    = \F. F (\f y Y. Y (\{B} ab. y {B} (\runY. runY {B} (comp ab f))));
+--let ymn : Yoneda Maybe Nat = \Y. Y (\k. just (k zero));
+--(yonedaFunctor {Maybe}{Bit} (\map. map (\n. n Bit (\_. I) O) ymn))
+--    {Nat} (\runY. runY (\b. b Nat (suc zero) zero))
+
+let Coyoneda : (U -> U) -> U -> U
+    = \F A. {Z} -> ({B} -> (B -> A) -> F B -> F Z) -> F Z;
+let coyonedaFunctor : {G : U -> U} -> Functor (Coyoneda G)
+    = \F. F (\f cy CY. cy (\{B} g v. CY {B} (comp f g) v));
+--let cymn : Coyoneda Maybe Bit = \CY. CY {Nat} (\n. n Bit (\_. I) O) (just zero);
+--maybeFunctor (\map. cymn map)
+
+
+let Codensity : (U -> U) -> U -> U
+    = \F A. {Z} -> ((runCodensity : {B} -> (A -> F B) -> F B) -> F Z) -> F Z;
+--let cdmn : Codensity Maybe Nat = \CD. CD (\k. k (suc zero));
+
+let codensityFunctor : {G : U -> U} -> Functor (Codensity G)
+    = \F. F (\f cd CD. CD (\{B} mf. cd {B} (\runCD. runCD {B} (comp mf f))));
+--(codensityFunctor {Maybe}{Bit} (\map. map (\n. n Bit (\_. I) O) cdmn))
+--    {Nat} (\runCD. runCD (\b. b (Maybe Nat) (just zero) nothing))
+
+let codensityApp : {G : U -> U} -> App (Codensity G)
+    = \A. A (\a CD. CD (\k. k a)) (\cdf cda CD. CD (\k. cda (\runA. runA (\a. cdf (\runF. runF (\f. k (f a)))))));
+--codensityApp {Maybe}{Bit} (\pure ap. ap (pure eqz) cdmn)
+
+let codensityMonad : {G : U -> U} -> Monad (Codensity G)
+    = \M. M (\a CD. CD (\k. k a)) (\cda mf CD. CD (\k. cda (\runA. runA (\a. (mf a) (\runFA. runFA k)))));
+--(codensityMonad {Maybe}{Nat} (\ret bind. bind cdmn (comp ret pred)))
+--    {Nat} (\runCD. runCD maybeNonzero)
 
 
 
@@ -631,11 +760,30 @@ let Decidable : {A B} -> (A -> B -> U) -> U           = \{A}{B} Rel. (x : A)(y :
 let EmptySet : {A} -> A -> U                          = \_. Bot;
 let UniversalSet : {A} -> A -> U                      = \_. Unit;
 let Member : {A} -> A -> (A -> U) -> U                = \x P. P x;
+let NonMember : {A} -> A -> (A -> U) -> U             = \x P. neg (Member x P);
+let Complement : {A} -> (A -> U) -> A -> U            = \P x. neg (Member x P);
+let Between : {A} -> (A -> U) -> (A -> U) -> U
+    = \P Q. Exists (\x. Pair (Member x P) (Member x Q));
 let Subset : {A} -> (A -> U) -> (A -> U) -> U         = \P Q. {x} -> Member x P -> Member x Q;
 let Empty : {A} -> (A -> U) -> U                      = \P. {x} -> neg (Member x P);
 let Universal : {A} -> (A -> U) -> U                  = \P. {x} -> Member x P;
 let ImplPred : {A} -> (A -> U) -> (A -> U) -> A -> U  = \P Q x. Member x P -> Member x Q;
 let Assert : {A B} -> (A -> B) -> (B -> U) -> A -> U  = \f P x. P (f x);
+
+-- Predicate Transformer
+let PT : U -> U -> U                                  = \A B. (A -> U) -> B -> U;
+let Pt : U -> U                                       = \A. (A -> U) -> A -> U;
+let skip : {A} -> Pt A                                = \P. P;
+let abort : {A B} -> PT A B                           = \{B=B} _. EmptySet {B};
+let magic : {A B} -> PT A B                           = \{B=B} _. UniversalSet {B};
+
+let Update : {A B} -> (A -> B) -> PT B A              = \f P x. P (f x);
+let AngelicUpdate : {A B} -> (A -> B -> U) -> PT B A  = \R P x. Between (R x) P;
+let DemonicUpdate : {A B} -> (A -> B -> U) -> PT B A  = \R P x. Subset (R x) P;
+
+let PFunctor : {I J} -> PT I J -> U
+    = \{I}{J} F. {T : I -> U}{j : J} ->
+        ((map : {P Q : I -> U} -> Subset P Q -> Subset (F P) (F Q)) -> F T j) -> F T j;
 
 
 -- Binary Relations
@@ -739,6 +887,54 @@ let IdemCommMonoid : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
         ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isIdemCommMonoid : IsIdemCommMonoid {C} rel op e) -> ICM rel op e) -> ICM Rel Op E;
 
 
+-- Reflexive-Transitive Closure
+
+let Const : {A B} -> U -> A -> B -> U = \I _ _. I;
+let Always : {A B} -> A -> B -> U = Const Unit;
+
+let Star : {A}{a b : A} -> (A -> A -> U) -> U
+    = \{A}{a}{b} T. (S : (A -> A -> U) -> A -> A -> U) ->
+        (empty : {i : A} -> S T i i)
+        (rel : {i j k : A}(x : T i j)(xs : S T j k) -> S T i k) -> S T a b;
+
+let StarList : U -> U = \A. Star (Const A);
+let starNil : {A} -> StarList A = \S empty rel. empty;
+let starCons : {A} -> A -> StarList A -> StarList A = \a as S empty rel. rel a (as S empty rel);
+-- starCons O starNil
+
+let StarNat : U = Star Always;
+let starZero : StarNat = \S empty rel. empty;
+let starSuc : StarNat -> StarNat = \n S empty rel. rel _ (n S empty rel);
+--starSuc (starSuc starZero)
+
+
+-- Rational Numbers
+
+let TypeBit : Bit -> U                                = \b. b U Unit Void;
+let NonZero : Nat -> U
+    = \n. (N : U) -> (nonZ : TypeBit (not (eqz n)) -> N) -> N;
+let oneNotZero : NonZero (suc zero)                   = \N nonZ. nonZ tt;
+
+let RawRatio : U
+    = (R : U) -> ((num : Nat) -> (predDen : Nat) -> R) -> R;
+let rawRatio : Nat -> Nat -> RawRatio                 = \m n R r. r m n;
+let rawNum : RawRatio -> Nat                          = \r. r Nat (\m n. m);
+let rawDen : RawRatio -> Nat                          = \r. r Nat (\m n. suc n);
+let RawRatioNonZero : RawRatio -> U                   = comp NonZero rawNum;
+
+let Divs : Nat -> Nat -> U
+    = \m n. {D : Nat -> Nat -> U} -> ({a b : Nat} -> (quot : Nat) -> Eq {Nat} (mul quot a) b -> D a b) -> D m n;
+let Coprime : Nat -> Nat -> U
+    = \m n. {d : Nat} -> Pair (Divs d m) (Divs d n) -> Eq d (suc zero);
+let Ratio : U
+    = {R : U} -> ((num : Nat) -> (predDen : Nat) -> Coprime num (suc predDen) -> R) -> R;
+
+let mulRightIden : {n : Nat}{ni : NatInd {n}} -> Eq {Nat} (mul n (suc zero)) n
+    = \{n}{ni}. ni (\n. Eq {Nat} (mul n (suc zero)) n) (cong suc) refl;
+let oneDividesAnyNat : {n : Nat} -> Divs (suc zero) n
+    = \{n} divs. divs {suc zero} n (mulRightIden {n});
+
+
 
 -----------------------
 -- Dependent Records --
@@ -757,6 +953,9 @@ let proj2 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> B a
 let smap
     : {A B}{P : A -> U}{Q : B -> U}(f : A -> B) -> ({x} -> P x -> Q (f x)) -> Sigma A P -> Sigma B Q
     =\{B=B}{Q=Q} f g s. s (\b. Sigma B Q) (\x y. dpair (f x) (g y));
+
+
+let Exists : {A}(B : A -> U){a : A} -> U              = \B {a}. Sigma _ B {a};
 
 
 -- Containers
@@ -892,3 +1091,16 @@ let natIndSndIrrelevant
           (fst (m (Pair A W) (\p. pair (f (fst p)) (x p)) (pair a y))))
         (\{m} acc. cong f acc)
         refl;
+
+
+-- Successor is injective
+
+let predLeftInvSuc : {n : Nat}{ni : NatInd {n}} -> Eq {Nat} (pred (suc n)) n
+    = \{n}{ni}. ni (\n. Eq {Nat} (pred (suc n)) n) (cong suc) refl;
+
+let sucInj : {m n : Nat}{mi : NatInd {m}}{ni : NatInd {n}} -> Eq {Nat} (suc m) (suc n) -> Eq {Nat} m n
+    = \{m}{n}{mi}{ni} sucEq.
+        stepAs            m   (sym (predLeftInvSuc {m}{mi}))
+       (stepAs (pred (suc m)) (cong pred sucEq)
+       (stepAs (pred (suc n)) (predLeftInvSuc {n}{ni})
+       (qed               n)));

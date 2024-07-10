@@ -938,7 +938,13 @@ let leqTrans : {m n o} -> Leq m n -> Leq n o -> Leq m o
     = \{m}{n}{o} mn no. no Leq ls
         (\{osubn}. mn Leq ls
           (\{nsubm}. lz {add nsubm osubn}));
-leqTrans
+
+let leqTransZero : {n o} -> Leq n o -> Leq zero n -> Leq zero o
+    = \{n}{o} no zn. lz {o};
+let leqTransSuc : {m n o}{ni : NatInd {n}} -> Leq n o ->
+        (Leq m n -> Leq m o) -> Leq (suc m) n -> Leq (suc m) o
+    = \{n}{o}{ni} no base sn. base sn;
+leqTransSuc
 
 let antisymZero : {m} -> Leq m zero -> Leq zero m -> Eq {Nat} m zero = \mz zm P pz. _;
 antisymZero
@@ -1042,3 +1048,87 @@ let natIndInFst
           {fst (m (Pair Nat A) (\p. pair {Nat}{A} (suc (fst p)) (f (fst p) (snd p))) (pair {Nat}{A} zero a))}
           {m} suc acc) (\{A}{f}{a}. refl);
 natIndInFst
+
+
+
+
+let Alt : (U -> U) -> U
+    = \F. {T} -> ({app : App F} -> (empty : {A} -> F A) -> (alt : {A} -> F A -> F A -> F A) -> F T) -> F T;
+let maybeAlt : Alt Maybe
+    = \A. A nothing (\lm rm. lm _ (rm _ nothing just) just);
+let contMaybeAlt : {B} -> Alt (\W. Cont W (Maybe B))
+    = \A. A {contApp} (cont (\k. k nothing))
+        (\lcm rcm. maybeAlt (\empty alt. alt (run lcm id) (run rcm id)));
+run (contMaybeAlt {Nat} (\{app} empty alt. app (\pure ap. alt (pure (just zero)) (pure (just (suc zero)))))) id
+
+
+let contMaybeApp : {W} -> App (\B. Cont (Maybe W) (Maybe B))
+    = \A. A (\x. cont (\k. k (just x))) (\cmf cma. cont (\k. run cma (\mv. mv _ (k nothing) (\v. run cmf (\mf. mf _ (k nothing) (\f. k (just (f v))))))));
+run {Maybe Bit} (contMaybeApp (\pure ap. ap (pure not) (cont (\k. k nothing)))) id
+
+
+-- contTrav does not exist
+let contTrav : {W} -> Trav (Cont W)
+    = \{W} T. T (\{G}{app}{B} f ca. app {Cont W B} (\pure ap. ca (G (Cont W B))
+        (\k. ap (pure cont) (pure (\g. ap (pure k) (pure (\x. ap (pure g) (f x))))))));
+contTrav
+
+let contTrav : {W} -> Trav (Cont W)
+    = \{W} T. T (\{G}{app}{B}{A} f ca. app {Cont W B} (\pure ap. run {G (Cont W B)}{A} ca
+        (\(x : A). ap {(B -> W) -> W}{Cont W B} (pure cont) (ap {B}{(B -> W) -> W} (pure (\b g. g b)) (f x)))));
+let contTrav : {W} -> Traversable (Cont W)
+    = \{W} T. T (\{G}{app}{B}{A} f ca. app {Cont W B} (\pure ap. ap {(A -> Cont W B)}{Cont W B}
+        (ap {Cont W A}{(A -> Cont W B) -> Cont W B} (pure run) (pure ca))
+        (ap {(B -> W) -> W}{Cont W B} (pure cont) (f x))));
+
+
+
+
+
+let buildTree : List Bit -> Maybe (RTree Unit)
+    = \bs. (bs (Maybe (Nonempty (RTree Unit -> RTree Unit))) (just (sing id))
+        (\b mfs. mfs (Maybe (Nonempty (RTree Unit -> RTree Unit))) nothing
+            (\fs. fs (Maybe (Nonempty (RTree Unit -> RTree Unit)))
+                (\f. b (Maybe (Nonempty (RTree Unit -> RTree Unit))) (just (ncons (\t. rnode (rleaf tt rnil) t) (sing f))) nothing)
+                (\f mgs. b (Maybe (Nonempty (RTree Unit -> RTree Unit)))
+                    (just (ncons (\t. rnode (rleaf tt rnil) t) (ncons f n)))
+                    (just (n (Nonempty (RTree Unit -> RTree Unit)) (\g. sing (comp f g))
+                        (\g o. ncons (comp f g) o)))))))
+        (Maybe (RTree Unit)) (\f. just (f rnil)) (\_ _. nothing);
+buildTree (cons O nil)
+
+let buildTree : List Bit -> Maybe (RTree Unit)
+    = \bs. (bs (Maybe (Nonempty (RTree Unit))) (just (sing id))
+        (\b mfs. mfs (Maybe (Nonempty (RTree Unit))) nothing
+            (\fs. fs (Maybe (Nonempty (RTree Unit)))
+                (\f. b (Maybe (Nonempty (RTree Unit))) (just (ncons (\t. rnode (rleaf tt rnil) t) (sing f))) nothing)
+                (\f mgs. b (Maybe (Nonempty (RTree Unit)))
+                    (just (ncons (\t. rnode (rleaf tt rnil) t) (ncons f n)))
+                    (just (n (Nonempty (RTree Unit)) (\g. sing (comp f g))
+                        (\g o. ncons (comp f g) o)))))))
+        (Maybe (RTree Unit)) just (\_ _. nothing);
+buildTree (cons O nil)
+
+
+
+let buildTree : List Bit -> Maybe (RTree Unit)
+    = \bs. (snd (bs (Nonempty (Endo (Maybe (RTree Unit))))
+        (sing id)
+        (\b mfs. mfs (Nonempty (Endo (Maybe (RTree Unit))))
+            (\f. _)
+            (\f fs. _))))
+        (Maybe (RTree Unit)) nothing (\f. f (just (rleaf tt)));
+buildTree (nil)
+
+
+
+let ratio : (n d : Nat) -> {_ : NonZero d} -> Coprime n d -> Ratio
+    = \n d coprime R. R n d coprime;
+ratio
+
+
+let traverse : {G : U -> U}{tra : Trav G}{H : U -> U}{app : App H}{B A} ->
+    (A -> H B) -> G A -> H (G B)
+        = \{G}{tra}{H}{app}{B}{A} f ma. tra {H}{B} (\trav. trav {H}{app}{B}{A} f ma);
+let listOfNonzero : Nat -> List Nat = \n. n (List Nat) (\_. cons n nil) nil;
+traverse {Maybe}{maybeTrav}{List}{listApp}{Nat}{Nat} listOfNonzero (just (suc zero))
