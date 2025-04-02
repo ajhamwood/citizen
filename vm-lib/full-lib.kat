@@ -722,7 +722,7 @@ let qed : {A}(x : A) -> Eq {A} x x                    = \_. refl;
 let EqIsEquiv : {T} -> IsEquivalence {T} Eq           = \E. E refl sym trans;
 --EqIsEquiv {E = {x} -> Eq {Bit} x x} (\refl sym trans. refl)
 let EqSetoid : {T} -> Setoid {T}                      = \S. S Eq (\E. E refl sym trans);
--- EqSetoid {Nat} (\Rel isEquiv. isEquiv (\refl sym trans. refl))
+-- EqSetoid {Nat} (\Rel IsEquiv. IsEquiv (\refl sym trans. refl))
 
 
 -- Less than or equal to
@@ -863,25 +863,38 @@ let Magma : {A}{Rel : A -> A -> U}{op : A -> A -> A} -> U
         ({C}{rel : C -> C -> U}{op : C -> C -> C}(isMagma : IsMagma {C} rel op) -> M rel op) -> M Rel Op;
 
 let IsUnitalMagma : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
-    = \{A} Rel op e. {UM} -> ((isMagma : IsMagma {A} Rel op)(identity : Identity Rel op e) -> UM) -> UM;
+    = \{A} Rel op e. {UM} -> ((isEquiv : IsEquivalence {A} Rel)
+        (opcong : BinCongruent Rel op)(identity : Identity Rel op e) -> UM) -> UM;
 let UnitalMagma : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
     = \{A}{Rel}{Op}{E}. {UM : {T} -> (T -> T -> U) -> (T -> T -> T) -> T -> U} ->
         ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isUnitalMagma : IsUnitalMagma {C} rel op e) -> UM rel op e) -> UM Rel Op E;
 
+let IsSemigroup : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
+    = \{A} Rel op. {M} -> ((isEquiv : IsEquivalence {A} Rel)
+        (opcong : BinCongruent Rel op)(assoc : Associative {A} Rel op) -> M) -> M;
+let Semigroup : {A}{Rel : A -> A -> U}{op : A -> A -> A} -> U
+    = \{A}{Rel}{Op}. {M : {T} -> (T -> T -> U) -> (T -> T -> T) -> U} ->
+        ({C}{rel : C -> C -> U}{op : C -> C -> C}(isSemigroup : IsSemigroup {C} rel op) -> M rel op) -> M Rel Op;
+
 let IsMonoid : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
-    = \{A} Rel op e. {M} -> ((isUnitalMagma : IsUnitalMagma {A} Rel op e)(assoc : Associative {A} Rel op) -> M) -> M;
+    = \{A} Rel op e. {M} -> ((isEquiv : IsEquivalence {A} Rel)
+        (opcong : BinCongruent Rel op)(identity : Identity Rel op e)(assoc : Associative {A} Rel op) -> M) -> M;
 let Monoid : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
     = \{A}{Rel}{Op}{E}. {M : {T} -> (T -> T -> U) -> (T -> T -> T) -> T -> U} ->
         ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isMonoid : IsMonoid {C} rel op e) -> M rel op e) -> M Rel Op E;
 
 let IsCommMonoid : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
-    = \{A} Rel op e. {CM} -> ((isMonoid : IsMonoid {A} Rel op e)(comm : Commutative {A} Rel op) -> CM) -> CM;
+    = \{A} Rel op e. {CM} -> ((isEquiv : IsEquivalence {A} Rel)
+        (opcong : BinCongruent Rel op)(identity : Identity Rel op e)(assoc : Associative {A} Rel op)
+        (comm : Commutative {A} Rel op) -> CM) -> CM;
 let CommMonoid : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
     = \{A}{Rel}{Op}{E}. {CM : {T} -> (T -> T -> U) -> (T -> T -> T) -> T -> U} ->
         ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isCommMonoid : IsCommMonoid {C} rel op e) -> CM rel op e) -> CM Rel Op E;
 
 let IsIdemCommMonoid : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
-    = \{A} Rel op e. {ICM} -> ((isCommMonoid : IsCommMonoid {A} Rel op e)(idem : Idempotent {A} Rel op) -> ICM) -> ICM;
+    = \{A} Rel op e. {ICM} -> ((isEquiv : IsEquivalence {A} Rel)
+        (opcong : BinCongruent Rel op)(identity : Identity Rel op e)(assoc : Associative {A} Rel op)
+        (comm : Commutative {A} Rel op)(idem : Idempotent {A} Rel op) -> ICM) -> ICM;
 let IdemCommMonoid : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
     = \{A}{Rel}{Op}{E}. {ICM : {T} -> (T -> T -> U) -> (T -> T -> T) -> T -> U} ->
         ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isIdemCommMonoid : IsIdemCommMonoid {C} rel op e) -> ICM rel op e) -> ICM Rel Op E;
@@ -1000,44 +1013,58 @@ let AnyC : (C : Container){X}(P : X -> U)(cx : cextend C X) -> U
 
 -- Concat on list is a monoid
 
+let ListMagma : {T} -> IsMagma {List T} Eq concat -> Magma {List T}
+    = \{T} p M. M {List T}{Eq {List T}}{concat} p;
 let ListIsMagma : {T} -> IsMagma {List T} Eq concat   = \IsM. IsM EqIsEquiv (cong2 concat);
-let ListMagma : {T} -> Magma {List T} = \{T} M. M {List T}{Eq {List T}}{concat} ListIsMagma;
 
+let ListUnitalMagma : {T} -> IsUnitalMagma {List T} Eq concat nil -> UnitalMagma {List T}
+    = \{T} p UM. UM {List T}{Eq {List T}}{concat}{nil} p;
 let concatRightIden : {A}{xs : List A}{xsi : ListInd A {xs}} -> Eq {List A} (concat xs nil) xs
     = \{A}{xs}{xsi}. xsi
         (\xs. Eq {List A} (concat xs nil) xs) refl (\a. cong (cons a));
-let ListIsUnitalMagma : {T} -> IsUnitalMagma {List T} Eq concat nil = \IsUM. IsUM ListIsMagma (pair refl (\{xs}. concatRightIden {xs=xs}));
-let ListUnitalMagma : {T} -> UnitalMagma {List T}     = \{T} UM. UM {List T}{Eq {List T}}{concat}{nil} ListIsUnitalMagma;
+let ListIsUnitalMagma : {T} -> IsUnitalMagma {List T} Eq concat nil
+    = \IsUM. ListIsMagma (\IsEquiv opcong. IsUM IsEquiv opcong (pair refl (\{xs}. concatRightIden {xs=xs})));
 
+let ListMonoid : {T} -> IsMonoid {List T} Eq concat nil -> Monoid {List T}
+    = \{T} p M. M {List T}{Eq {List T}}{concat}{nil} p;
 let concatAssoc
     : {A}{xs ys zs : List A}{xsi : ListInd A {xs}} ->
         Eq {List A} (concat (concat xs ys) zs) (concat xs (concat ys zs))
     = \{A}{xs}{ys}{zs}{xsi}. xsi
         (\xs. Eq {List A} (concat (concat xs ys) zs) (concat xs (concat ys zs)))
         refl (\a. cong (cons a));
-let ListIsMonoid : {T} -> IsMonoid {List T} Eq concat nil = \IsUM. IsUM ListIsUnitalMagma (\{xs}. concatAssoc {xs=xs});
-let ListMonoid : {T} -> Monoid {List T}               = \{T} M. M {List T}{Eq {List T}}{concat}{nil} ListIsMonoid;
---ListMonoid {Bit} (\IsMon. IsMon (\IsUMag Assoc. IsUMag (\IsMag Iden. IsMag (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))))
+let ListIsMonoid : {T} -> IsMonoid {List T} Eq concat nil
+    = \IsMon. ListIsUnitalMagma (\IsEquiv opcong iden. IsMon IsEquiv opcong iden (\{xs}. concatAssoc {xs=xs}));
+--ListMonoid ListIsMonoid (\IsMon. IsMon (\IsEquiv opcong iden assoc. IsEquiv (\refl sym trans. refl)))
+
+-- Alternative route to Monoid
+
+let ListIsMonoid_ : {T} -> IsMonoid {List T} Eq concat nil
+    = \IsMon. IsMon EqIsEquiv (cong2 concat) (pair refl (\{xs}. concatRightIden {xs=xs})) (\{xs}. concatAssoc {xs=xs});
+ListMonoid ListIsMonoid_ (\IsMon. IsMon (\IsEquiv opcong iden assoc. IsEquiv (\refl sym trans. refl)))
 
 
 -- Addition on Nat is a commutative monoid
 
+let NatAddMagma : IsMagma Eq add -> Magma {Nat} = \p M. M {Nat}{Eq {Nat}}{add} p;
 let NatAddIsMagma : IsMagma Eq add = \IsM. IsM EqIsEquiv (cong2 add);
-let NatAddMagma : Magma {Nat} = \M. M {Nat}{Eq {Nat}}{add} NatAddIsMagma;
---NatAddMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
+--NatAddMagma NatAddIsMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
 
+let NatAddUnitalMagma : IsUnitalMagma {Nat} Eq add zero -> UnitalMagma {Nat} = \p UM. UM {Nat}{Eq {Nat}}{add}{zero} p;
 let addRightIden : {n : Nat}{ni : NatInd {n}} -> Eq {Nat} (add n zero) n
     = \{n}{ni}. ni (\n. Eq {Nat} (add n zero) n) (cong suc) refl;
-let NatAddIsUnitalMagma : IsUnitalMagma {Nat} Eq add zero = \IsUM. IsUM NatAddIsMagma (pair refl addRightIden);
-let NatAddUnitalMagma : UnitalMagma {Nat} = \UM. UM {Nat}{Eq {Nat}}{add}{zero} NatAddIsUnitalMagma;
---NatAddUnitalMagma  (\IsUM. IsUM (\IsM Iden. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans.refl))))
+let NatAddIsUnitalMagma : IsUnitalMagma {Nat} Eq add zero
+    = \IsUM. NatAddIsMagma (\IsEquiv opcong. IsUM IsEquiv opcong (pair refl addRightIden));
+--NatAddUnitalMagma NatAddIsUnitalMagma (\IsUM. IsUM (\IsEquiv opcong iden. IsEquiv (\refl sym trans. refl)))
 
-let addAssoc : {m n p : Nat}{mi : NatInd {m}} -> Eq {Nat} (add (add m n) p) (add m (add n p))
-    = \ {m}{n}{p}{mi}. mi (\m. Eq {Nat} (add (add m n) p) (add m (add n p))) (cong suc) refl;
-let NatAddIsMonoid : IsMonoid {Nat} Eq add zero = \IsUMag. IsUMag NatAddIsUnitalMagma (\{x}{y}{z}. addAssoc {x}{y}{z});
-let NatAddMonoid : Monoid {Nat} = \M. M {Nat}{Eq {Nat}}{add}{zero} NatAddIsMonoid;
---NatAddMonoid (\IsMon. IsMon (\IsUMag Assoc. IsUMag (\IsMag Iden. IsMag (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))))
 
+let NatAddMonoid : IsMonoid {Nat} Eq add zero -> Monoid {Nat} = \p M. M {Nat}{Eq {Nat}}{add}{zero} p;
+let addAssoc : {m n p : Nat} -> Eq {Nat} (add (add m n) p) (add m (add n p)) = refl;
+let NatAddIsMonoid : IsMonoid {Nat} Eq add zero
+    = \IsMon. NatAddIsUnitalMagma (\IsEquiv opcong iden. IsMon IsEquiv opcong iden (\{x}{y}{z}. addAssoc {x}{y}{z}));
+--NatAddMonoid NatAddIsMonoid (\IsMon. IsMon (\IsEquiv opcong iden assoc. IsEquiv (\refl sym trans. refl)))
+
+let NatAddCommMonoid : IsCommMonoid {Nat} Eq add zero -> CommMonoid {Nat} = \p CM. CM {Nat}{Eq {Nat}}{add}{zero} p;
 let addSuc : (m n : Nat){mi : NatInd {m}} -> Eq (add m (suc n)) (suc (add m n))
     = \m n {mi}. mi (\m. Eq (add m (suc n)) (suc (add m n))) (cong suc) refl;
 let addCommSuc
@@ -1049,9 +1076,21 @@ let addCommSuc
        (qed (add (suc k) n)));
 let addComm : {m n : Nat}{mi : NatInd {m}}{ni : NatInd {n}} -> Eq (add m n) (add n m)
     = \{m}{n}{mi}{ni}. ni (\n. Eq {Nat} (add m n) (add n m)) (addCommSuc {m}{mi}) (addRightIden {m}{mi});
-let NatAddIsCommMonoid : IsCommMonoid {Nat} Eq add zero = \IsMon. IsMon NatAddIsMonoid (\{x}{y}. addComm {x}{y});
-let NatAddCommMonoid : CommMonoid {Nat} = \CM. CM {Nat}{Eq {Nat}}{add}{zero} NatAddIsCommMonoid;
---NatAddCommMonoid (\IsCM. IsCM (\IsMon Comm. IsMon (\IsUMag Assoc. IsUMag (\IsMag Iden. IsMag (\IsEquiv opcong. IsEquiv (\refl sym trans. refl))))))
+let NatAddIsCommMonoid : IsCommMonoid {Nat} Eq add zero = \IsMon. NatAddIsMonoid
+    (\IsEquiv opcong iden assoc. IsMon IsEquiv opcong iden (\{x}{y}{z}. assoc {x}{y}{z}) (\{x}{y}. addComm {x}{y}));
+--NatAddCommMonoid NatAddIsCommMonoid (\IsCM. IsCM (\IsEquiv opcong iden assoc comm. IsEquiv (\refl sym trans. refl)))
+
+-- Alternative route to Monoid
+
+let NatAddSemigroup : IsSemigroup {Nat} Eq add -> Semigroup {Nat} = \p SG. SG {Nat}{Eq {Nat}}{add} p;
+let NatAddIsSemigroup : IsSemigroup {Nat} Eq add
+    = \IsSG. NatAddIsMagma (\IsEquiv opcong. IsSG IsEquiv opcong (\{x}{y}{z}. addAssoc {x}{y}{z}));
+--NatAddSemigroup NatAddIsSemigroup (\IsSG. IsSG (\IsEquiv opcong assoc. IsEquiv (\refl sym trans. refl)))
+
+let NatAddIsMonoid_ : IsMonoid {Nat} Eq add zero
+    = \IsMon. NatAddIsSemigroup
+        (\IsEquiv opcong assoc. IsMon IsEquiv opcong (pair refl addRightIden) (\{x}{y}{z}. assoc {x}{y}{z}));
+--NatAddMonoid NatAddIsMonoid_ (\IsMon. IsMon (\IsEquiv opcong iden assoc. IsEquiv (\refl sym trans. refl)))
 
 
 -- Foldnat is unrollable
