@@ -852,6 +852,24 @@ let Commutative : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
     = \Rel op. {x y} -> Rel (op x y) (op y x);
 let Idempotent : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
     = \Rel op. {x} -> Rel (op x x) x;
+let Absorbs : {A}(Rel : A -> A -> U)(op1 op2 : A -> A -> A) -> U
+    = \Rel op1 op2. {x}{y} -> Rel (op1 x (op2 x y)) x;
+let Absorptive : {A}(Rel : A -> A -> U)(op1 op2 : A -> A -> A) -> U
+    = \Rel op1 op2. Pair (Absorbs Rel op1 op2) (Absorbs Rel op2 op1);
+
+let LeftDistributesOver : {A}(Rel : A -> A -> U)(op1 op2 : A -> A -> A) -> U
+    = \Rel op1 op2. {x y z} -> Rel (op1 x (op2 y z)) (op2 (op1 x y) (op1 x z));
+let RightDistributesOver : {A}(Rel : A -> A -> U)(op1 op2 : A -> A -> A) -> U
+    = \Rel op1 op2. {x y z} -> Rel (op1 (op2 y z) x) (op2 (op1 y x) (op1 z x));
+let DistributesOver : {A}(Rel : A -> A -> U)(op1 op2 : A -> A -> A) -> U
+    = \Rel op1 op2. Pair (LeftDistributesOver Rel op1 op2) (RightDistributesOver Rel op1 op2);
+
+let LeftInverse : {A}(Rel : A -> A -> U)(op : A -> A -> A)(inv : A -> A)(e : A) -> U
+    = \Rel op inv e. {x} -> Rel (op (inv x) x) e;
+let RightInverse : {A}(Rel : A -> A -> U)(op : A -> A -> A)(inv : A -> A)(e : A) -> U
+    = \Rel op inv e. {x} -> Rel (op x (inv x)) e;
+let Inverse : {A}(Rel : A -> A -> U)(op : A -> A -> A)(inv : A -> A)(e : A) -> U
+    = \Rel op inv e. Pair (LeftInverse Rel op inv e) (RightInverse Rel op inv e);
 
 
 -- Algebras
@@ -898,6 +916,45 @@ let IsIdemCommMonoid : {A}(Rel : A -> A -> U)(op : A -> A -> A)(e : A) -> U
 let IdemCommMonoid : {A}{Rel : A -> A -> U}{op : A -> A -> A}{e : A} -> U
     = \{A}{Rel}{Op}{E}. {ICM : {T} -> (T -> T -> U) -> (T -> T -> T) -> T -> U} ->
         ({C}{rel : C -> C -> U}{op : C -> C -> C}{e : C}(isIdemCommMonoid : IsIdemCommMonoid {C} rel op e) -> ICM rel op e) -> ICM Rel Op E;
+
+let IsBand : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
+    = \{A} Rel op. {M} -> ((isEquiv : IsEquivalence {A} Rel)
+        (opcong : BinCongruent Rel op)(assoc : Associative {A} Rel op)(idem : Idempotent {A} Rel op) -> M) -> M;
+let Band : {A}{Rel : A -> A -> U}{op : A -> A -> A} -> U
+    = \{A}{Rel}{Op}. {M : {T} -> (T -> T -> U) -> (T -> T -> T) -> U} ->
+        ({C}{rel : C -> C -> U}{op : C -> C -> C}(isBand : IsBand {C} rel op) -> M rel op) -> M Rel Op;
+
+let IsSemilattice : {A}(Rel : A -> A -> U)(op : A -> A -> A) -> U
+    = \{A} Rel op. {M} -> ((isEquiv : IsEquivalence {A} Rel)
+        (opcong : BinCongruent Rel op)(assoc : Associative {A} Rel op)(comm : Commutative {A} Rel op)(idem : Idempotent {A} Rel op) -> M) -> M;
+let Semilattice : {A}{Rel : A -> A -> U}{op : A -> A -> A} -> U
+    = \{A}{Rel}{Op}. {M : {T} -> (T -> T -> U) -> (T -> T -> T) -> U} ->
+        ({C}{rel : C -> C -> U}{op : C -> C -> C}(isSemilattice : IsSemilattice {C} rel op) -> M rel op) -> M Rel Op;
+
+let IsLattice : {A}(Rel : A -> A -> U)(op1 op2 : A -> A -> A) -> U
+    = \{A} Rel op1 op2. {M} -> ((isEquiv : IsEquivalence {A} Rel)
+        (opcong1 : BinCongruent Rel op1)(assoc1 : Associative {A} Rel op1)(comm1 : Commutative {A} Rel op1)
+        (opcong2 : BinCongruent Rel op2)(assoc2 : Associative {A} Rel op2)(comm2 : Commutative {A} Rel op2)
+        (absorp : Absorptive Rel op1 op2) -> M) -> M;
+let Lattice : {A}{Rel : A -> A -> U}{op1 op2 : A -> A -> A} -> U
+    = \{A}{Rel}{Op1}{Op2}. {M : {T} -> (T -> T -> U) -> (T -> T -> T) -> (T -> T -> T) -> U} ->
+        ({C}{rel : C -> C -> U}{op1 op2 : C -> C -> C}(isLattice : IsLattice {C} rel op1 op2) -> M rel op1 op2) -> M Rel Op1 Op2;
+
+let IsDistributiveLattice : {A}(Rel : A -> A -> U)(op1 op2 : A -> A -> A) -> U
+    = \{A} Rel op1 op2. {M} -> ((isLattice : IsLattice {A} Rel op1 op2)
+        (distrib12 : DistributesOver Rel op1 op2)(distrib21 : DistributesOver Rel op2 op1) -> M) -> M;
+let DistributiveLattice : {A}{Rel : A -> A -> U}{op1 op2 : A -> A -> A} -> U
+    = \{A}{Rel}{Op1}{Op2}. {M : {T} -> (T -> T -> U) -> (T -> T -> T) -> (T -> T -> T) -> U} ->
+        ({C}{rel : C -> C -> U}{op1 op2 : C -> C -> C}(isDistributiveLattice : IsDistributiveLattice {C} rel op1 op2) -> M rel op1 op2) -> M Rel Op1 Op2;
+
+let IsBooleanAlgebra : {A}(Rel : A -> A -> U)(op1 op2 : A -> A -> A)(inv : A -> A)(top bot : A) -> U
+    = \{A} Rel op1 op2 inv top bot. {M} -> ((isLattice : IsLattice {A} Rel op1 op2)
+        (distrib12 : DistributesOver Rel op1 op2)(distrib21 : DistributesOver Rel op2 op1)
+        (op1compl : Inverse Rel op1 inv top)(op2compl : Inverse Rel op2 inv bot)(invcong : Congruent Rel inv) -> M) -> M;
+let BooleanAlgebra : {A}{Rel : A -> A -> U}{op1 op2 : A -> A -> A}{inv : A -> A}{top bot : A} -> U
+    = \{A}{Rel}{Op1}{Op2}{Inv}{Top}{Bott}. {M : {T} -> (T -> T -> U) -> (T -> T -> T) -> (T -> T -> T) -> (T -> T) -> T -> T -> U} ->
+        ({C}{rel : C -> C -> U}{op1 op2 : C -> C -> C}{inv : C -> C}{top bot : C}
+        (isBooleanAlgebra : IsBooleanAlgebra {C} rel op1 op2 inv top bot) -> M rel op1 op2 inv top bot) -> M Rel Op1 Op2 Inv Top Bott;
 
 
 -- Reflexive-Transitive Closure
@@ -1046,8 +1103,8 @@ ListMonoid ListIsMonoid_ (\IsMon. IsMon (\IsEquiv opcong iden assoc. IsEquiv (\r
 
 -- Addition on Nat is a commutative monoid
 
-let NatAddMagma : IsMagma Eq add -> Magma {Nat} = \p M. M {Nat}{Eq {Nat}}{add} p;
-let NatAddIsMagma : IsMagma Eq add = \IsM. IsM EqIsEquiv (cong2 add);
+let NatAddMagma : IsMagma {Nat} Eq add -> Magma {Nat} = \p M. M {Nat}{Eq {Nat}}{add} p;
+let NatAddIsMagma : IsMagma {Nat} Eq add = \IsM. IsM EqIsEquiv (cong2 add);
 --NatAddMagma NatAddIsMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
 
 let NatAddUnitalMagma : IsUnitalMagma {Nat} Eq add zero -> UnitalMagma {Nat} = \p UM. UM {Nat}{Eq {Nat}}{add}{zero} p;
@@ -1091,6 +1148,124 @@ let NatAddIsMonoid_ : IsMonoid {Nat} Eq add zero
     = \IsMon. NatAddIsSemigroup
         (\IsEquiv opcong assoc. IsMon IsEquiv opcong (pair refl addRightIden) (\{x}{y}{z}. assoc {x}{y}{z}));
 --NatAddMonoid NatAddIsMonoid_ (\IsMon. IsMon (\IsEquiv opcong iden assoc. IsEquiv (\refl sym trans. refl)))
+
+
+-- Boolean Algebra
+
+let MeetMagma : IsMagma {Bool} Eq and -> Magma {Bool} = \p M. M {Bool}{Eq {Bool}}{and} p;
+let MeetIsMagma : IsMagma {Bool} Eq and = \IsM. IsM EqIsEquiv (cong2 and);
+--MeetMagma MeetIsMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
+
+let MeetSemigroup : IsSemigroup {Bool} Eq and -> Semigroup {Bool} = \p SG. SG {Bool}{Eq {Bool}}{and} p;
+let andAssoc : {m n p : Bool}{bi : BoolInd {m}} -> Eq {Bool} (and (and m n) p) (and m (and n p))
+    = \{m}{n}{p}{bi}. bi (\b. Eq {Bool} (and (and b n) p) (and b (and n p))) refl refl;
+let MeetIsSemigroup : IsSemigroup {Bool} Eq and
+    = \IsSG. MeetIsMagma (\IsEquiv opcong. IsSG IsEquiv opcong (\{x}{y}{z}. andAssoc {x}{y}{z}));
+--MeetSemigroup MeetIsSemigroup (\IsSG. IsSG (\IsEquiv opcong assoc. IsEquiv (\refl sym trans. refl)))
+
+let MeetBand : IsBand {Bool} Eq and -> Band {Bool} = \p B. B {Bool}{Eq {Bool}}{and} p;
+let andIdemp : {b : Bool}{bi : BoolInd {b}} -> Eq {Bool} (and b b) b
+    = \{bi=bi}. bi (\b. Eq {Bool} (and b b) b) refl refl;
+let MeetIsBand : IsBand {Bool} Eq and
+    = \IsB. MeetIsSemigroup (\IsEquiv opcong assoc. IsB IsEquiv opcong (\{x}{y}{z}. assoc {x}{y}{z}) (\{x}. andIdemp {x}));
+--MeetBand MeetIsBand (\IsB. IsB (\IsEquiv opcong assoc idemp. IsEquiv (\refl sym trans. refl)))
+
+let MeetSemilattice : IsSemilattice {Bool} Eq and -> Semilattice {Bool} = \p SL. SL {Bool}{Eq {Bool}}{and} p;
+let andComm : {a b : Bool}{ai : BoolInd {a}}{bi : BoolInd {b}} -> Eq {Bool} (and a b) (and b a)
+    = \{a}{b}{ai}{bi}. ai (\c. Eq {Bool} (and c b) (and b c))
+        (bi (\d. Eq {Bool} d (and d true)) refl refl)
+        (bi (\d. Eq {Bool} false (and d false)) refl refl);
+let MeetIsSemilattice : IsSemilattice {Bool} Eq and
+    = \IsSL. MeetIsBand (\IsEquiv opcong assoc idemp. IsSL IsEquiv opcong (\{x}{y}{z}. assoc {x}{y}{z}) (\{x}{y}. andComm {x}{y}) (\{x}. idemp {x}));
+--MeetSemilattice MeetIsSemilattice (\IsSL. IsSL (\IsEquiv opcong assoc comm idemp. IsEquiv (\refl sym trans. refl)))
+
+let MeetIsSemilattice_ : IsSemilattice {Bool} Eq and
+    = \IsSL. IsSL EqIsEquiv (cong2 and) (\{x}{y}{z}. andAssoc {x}{y}{z}) (\{x}{y}. andComm {x}{y}) (\{x}. andIdemp {x});
+--MeetSemilattice MeetIsSemilattice_ (\IsSL. IsSL (\IsEquiv opcong assoc comm idemp. IsEquiv (\refl sym trans. refl)))
+
+
+let JoinMagma : IsMagma {Bool} Eq or -> Magma {Bool} = \p M. M {Bool}{Eq {Bool}}{or} p;
+let JoinIsMagma : IsMagma {Bool} Eq or = \IsM. IsM EqIsEquiv (cong2 or);
+--JoinMagma JoinIsMagma (\IsM. IsM (\IsEquiv opcong. IsEquiv (\refl sym trans. refl)))
+
+let JoinSemigroup : IsSemigroup {Bool} Eq or -> Semigroup {Bool} = \p SG. SG {Bool}{Eq {Bool}}{or} p;
+let orAssoc : {m n p : Bool}{bi : BoolInd {m}} -> Eq {Bool} (or (or m n) p) (or m (or n p))
+    = \{m}{n}{p}{bi}. bi (\b. Eq {Bool} (or (or b n) p) (or b (or n p))) refl refl;
+let JoinIsSemigroup : IsSemigroup {Bool} Eq or
+    = \IsSG. JoinIsMagma (\IsEquiv opcong. IsSG IsEquiv opcong (\{x}{y}{z}. orAssoc {x}{y}{z}));
+--JoinSemigroup JoinIsSemigroup (\IsSG. IsSG (\IsEquiv opcong assoc. IsEquiv (\refl sym trans. refl)))
+
+let JoinBand : IsBand {Bool} Eq or -> Band {Bool} = \p B. B {Bool}{Eq {Bool}}{or} p;
+let orIdemp : {b : Bool}{bi : BoolInd {b}} -> Eq {Bool} (or b b) b
+    = \{bi=bi}. bi (\b. Eq {Bool} (or b b) b) refl refl;
+let JoinIsBand : IsBand {Bool} Eq or
+    = \IsB. JoinIsSemigroup (\IsEquiv opcong assoc. IsB IsEquiv opcong (\{x}{y}{z}. assoc {x}{y}{z}) (\{x}. orIdemp {x}));
+--JoinBand JoinIsBand (\IsB. IsB (\IsEquiv opcong assoc idemp. IsEquiv (\refl sym trans. refl)))
+
+let JoinSemilattice : IsSemilattice {Bool} Eq or -> Semilattice {Bool} = \p SL. SL {Bool}{Eq {Bool}}{or} p;
+let orComm : {a b : Bool}{ai : BoolInd {a}}{bi : BoolInd {b}} -> Eq {Bool} (or a b) (or b a)
+    = \{a}{b}{ai}{bi}. ai (\c. Eq {Bool} (or c b) (or b c))
+        (bi (\d. Eq {Bool} true (or d true)) refl refl)
+        (bi (\d. Eq {Bool} d (or d false)) refl refl);
+let JoinIsSemilattice : IsSemilattice {Bool} Eq or
+    = \IsSL. JoinIsBand (\IsEquiv opcong assoc idemp. IsSL IsEquiv opcong (\{x}{y}{z}. assoc {x}{y}{z}) (\{x}{y}. orComm {x}{y}) (\{x}. idemp {x}));
+--JoinSemilattice JoinIsSemilattice (\IsSL. IsSL (\IsEquiv opcong assoc comm idemp. IsEquiv (\refl sym trans. refl)))
+
+let JoinIsSemilattice_ : IsSemilattice {Bool} Eq or
+    = \IsSL. IsSL EqIsEquiv (cong2 or) (\{x}{y}{z}. orAssoc {x}{y}{z}) (\{x}{y}. orComm {x}{y}) (\{x}. orIdemp {x});
+JoinSemilattice JoinIsSemilattice_ (\IsSL. IsSL (\IsEquiv opcong assoc comm idemp. IsEquiv (\refl sym trans. refl)))
+
+
+let BoolLattice : IsLattice {Bool} Eq and or -> Lattice {Bool} = \p L. L {Bool}{Eq {Bool}}{and}{or} p;
+let andAbsorbsOr : {a b : Bool}{ai : BoolInd {a}} -> Eq {Bool} (and a (or a b)) a
+    = \{a}{b}{ai}. ai (\c. Eq {Bool} (and c (or c b)) c) (tt (Eq {Bool} true true) refl) refl;
+let orAbsorbsAnd : {a b : Bool}{ai : BoolInd {a}} -> Eq {Bool} (or a (and a b)) a
+    = \{a}{b}{ai}. ai (\c. Eq {Bool} (or c (and c b)) c) (tt (Eq {Bool} true true) refl) refl;
+let BoolIsLattice : IsLattice {Bool} Eq and or
+    = \IsL. IsL EqIsEquiv
+        (cong2 and) (\{x}{y}{z}. andAssoc {x}{y}{z}) (\{x}{y}. andComm {x}{y})
+        (cong2 or) (\{x}{y}{z}. orAssoc {x}{y}{z}) (\{x}{y}. orComm {x}{y})
+        (pair (\{x}{y}. andAbsorbsOr {x}{y}) (\{x}{y}. orAbsorbsAnd {x}{y}));
+--BoolLattice BoolIsLttice (\IsSL. IsSL (\IsEquiv opcong1 assoc1 comm1 opcong2 assoc2 comm2 absorp. IsEquiv (\refl sym trans. refl)))
+
+let BoolDistributiveLattice : IsDistributiveLattice {Bool} Eq and or -> DistributiveLattice {Bool} = \p L. L {Bool}{Eq {Bool}}{and}{or} p;
+let andLeftDistribOverOr : {a b c : Bool}{ai : BoolInd {a}} -> Eq {Bool} (and a (or b c)) (or (and a b) (and a c))
+    = \{a}{b}{c}{ai}. ai (\d. Eq {Bool} (and d (or b c)) (or (and d b) (and d c))) refl refl;
+let andRightDistribOverOr : {a b c : Bool}{ai : BoolInd {a}} -> Eq {Bool} (and (or b c) a) (or (and b a) (and c a))
+    = \{a}{b}{c}{ai}.
+         stepAs (and (or b c) a) (andComm {or b c}{a})
+        (stepAs (and a (or b c)) (andLeftDistribOverOr {a}{b}{c})
+        (stepAs (or (and a b) (and a c)) (cong2 or (andComm {a}{b}) (andComm {a}{c}))
+        (qed (or (and b a) (and c a)))));
+let andDistribOverOr : DistributesOver Eq and or = pair (\{x}{y}{z}. andLeftDistribOverOr {x}{y}{z}) (\{x}{y}{z}. andRightDistribOverOr {x}{y}{z});
+let orLeftDistribOverAnd : {a b c : Bool}{ai : BoolInd {a}} -> Eq {Bool} (or a (and b c)) (and (or a b) (or a c))
+    = \{a}{b}{c}{ai}. ai (\d. Eq {Bool} (or d (and b c)) (and (or d b) (or d c))) refl refl;
+let orRightDistribOverAnd : {a b c : Bool}{ai : BoolInd {a}} -> Eq {Bool} (or (and b c) a) (and (or b a) (or c a))
+    = \{a}{b}{c}{ai}.
+         stepAs (or (and b c) a) (orComm {and b c}{a})
+        (stepAs (or a (and b c)) (orLeftDistribOverAnd {a}{b}{c})
+        (stepAs (and (or a b) (or a c)) (cong2 and (orComm {a}{b}) (orComm {a}{c}))
+        (qed (and (or b a) (or c a)))));
+let orDistribOverAnd : DistributesOver Eq or and = pair (\{x}{y}{z}. orLeftDistribOverAnd {x}{y}{z}) (\{x}{y}{z}. orRightDistribOverAnd {x}{y}{z});
+let BoolIsDistributiveLattice : IsDistributiveLattice {Bool} Eq and or
+    = \IsDL. IsDL BoolIsLattice andDistribOverOr orDistribOverAnd;
+--BoolDistributiveLattice BoolIsDistributiveLattice (\IsDL. IsDL (\IsL distrib12 distrib21. IsL
+--  (\IsEquiv opcong1 assoc1 comm1 opcong2 assoc2 comm2 absorp. IsEquiv (\refl sym trans. refl))))
+
+let BoolBooleanAlgebra : IsBooleanAlgebra {Bool} Eq and or not false true -> BooleanAlgebra {Bool} = \p L. L {Bool}{Eq {Bool}}{and}{or}{not}{false}{true} p;
+let andLeftInverse : {a : Bool}{ai : BoolInd {a}}-> Eq {Bool} (and (not a) a) false
+    = \{a}{ai}. ai (\b. Eq {Bool} (and (not b) b) false) refl refl;
+let andRightInverse : {a : Bool} -> Eq {Bool} (and a (not a)) false
+    = \{a}. trans {Bool} (andLeftInverse {a}) (andComm {a} {not a});
+let orLeftInverse : {a : Bool}{ai : BoolInd {a}}-> Eq {Bool} (or (not a) a) true
+    = \{a}{ai}. ai (\b. Eq {Bool} (or (not b) b) true) refl refl;
+let orRightInverse : {a : Bool} -> Eq {Bool} (or a (not a)) true
+    = \{a}. trans {Bool} (orLeftInverse {a}) (orComm {a} {not a});
+let BoolIsBooleanAlgebra : IsBooleanAlgebra {Bool} Eq and or not false true
+    = \IsBA. IsBA BoolIsLattice andDistribOverOr orDistribOverAnd
+        (pair (\{x}. andLeftInverse {x}) (\{x}. andRightInverse {x})) (pair (\{x}. orLeftInverse {x}) (\{x}. orRightInverse {x})) (cong not);
+--BoolBooleanAlgebra BoolIsBooleanAlgebra (\IsBA. IsBA (\IsL distrib12 distrib21 op1compl op2compl invcong. IsL
+--  (\IsEquiv opcong1 assoc1 comm1 opcong2 assoc2 comm2 absorp. IsEquiv (\refl sym trans. refl))))
 
 
 -- Foldnat is unrollable
