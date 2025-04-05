@@ -630,12 +630,7 @@ fact (suc (suc (suc zero)))
 
 
 
-let cmExtend : {Sh1 Sh2}{cmS : Sh1 -> Sh2}{C1 : Container {Sh1}}{C2 : Container {Sh2}}{X} ->
-               CMorphism {Sh1}{Sh2}{cmS} C1 C2 -> cextend {Sh1} C1 X -> cextend {Sh2} C2 X
-    = \{Sh1}{Sh2}{cmS}{C1}{C2}{X} CM.
-        smap {Sh1}{Sh2}{cposition C1}{cposition C2}
-            (cmshape {Sh1}{Sh2}{C1}{C2} (CM))
-            (comp (cmposition {cmS}{C1}{C2} CM));
+
 -- W types
 
 let W : {WSh}(C : Container {WSh}) -> U
@@ -648,6 +643,20 @@ let whead : {WSh}{C : Container {WSh}} -> W {WSh} C -> cshape C
 
 whead
 
+
+
+let WC : {Sh} -> Container {Sh} -> U
+    = \{Sh} C. (W : U) -> (sup : (cextend C) W -> W) -> W;
+--let supC : {Sh}{C : Container {Sh}} -> (cextend C) (WC C) -> WC C
+--    = \{Sh}{C} cxw W s. cxw (\_. WC C) (\sh pos. s sh pos);
+--supC
+--WC (cpair Nat (\n. Fin {n}))
+
+let WT : (A : U)(B : A -> U) -> U
+    = \A B. (W : (X : U)(Y : X -> U) -> U) -> ((sup : {X}{Y : X -> U}(x : X)(yx : Y x -> W X Y) -> W X Y) -> W A B) -> W A B;
+let supT : {A}{B : A -> U}(a : A)(b : B a -> WT A B) -> WT A B = \{A}{B} a b _ W. W (\sup. _);
+--supT
+--WT Nat (\n. Fin {n})
 
 
 \{Sh}{X}{Y}(C : Container {Sh})(Rel : X -> Y -> U)(cx : cextend {Sh} C X)(cy : cextend {Sh} C Y)(shape : Eq {Sh} (proj1 {Sh} cx) (proj1 {Sh} cy)){px}.

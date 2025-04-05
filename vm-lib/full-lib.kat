@@ -1021,11 +1021,18 @@ let proj1 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> A
 let proj2 : {A}{B : A -> U}{a : A} -> Sigma A B {a} -> B a
     = \{B=B} s. s B (\fst snd. snd);
 let smap
-    : {A B}{P : A -> U}{Q : B -> U}(f : A -> B) -> ({x} -> P x -> Q (f x)) -> Sigma A P -> Sigma B Q
-    =\{B=B}{Q=Q} f g s. s (\b. Sigma B Q) (\x y. dpair (f x) (g y));
-
+    : {A B}{P : A -> U}{Q : B -> U}(f : A -> B){a : A} -> ({x} -> P x -> Q (f x)) -> Sigma A P {a} -> Sigma B Q {f a}
+    =\{B=B}{Q=Q} f g s. s (\a. Sigma B Q {f a}) (\x y. dpair (f x) (g y));
 
 let Exists : {A}(B : A -> U){a : A} -> U              = \B {a}. Sigma _ B {a};
+
+let Prod : (A B : U){a : A} -> U = \A B {a}. Sigma A (const B) {a};
+let ndpair : {A B}(a : A)(b : B) -> Prod A B {a}
+    = \a b S s. s a b;
+let smapProj1 : {A B C}(f : A -> B){a} -> Prod A C {a} -> Prod B C {f a}
+    = \{A}{B}{C} f {a}. smap {A}{B}{const C}{const C} f id {a};
+let smapProj2 : {A}{B C : A -> U}(f : {x} -> B x -> C x){a : A} -> Sigma A B {a} -> Sigma A C {a}
+    = \{A}{B}{C} f {a}. smap {A}{A}{B}{C} id f {a};
 
 
 -- Containers
@@ -1035,32 +1042,54 @@ let Container : {Sh} -> U
 let cpair : (Sh : U)(Pos : Sh -> U) -> Container {Sh}
     = \Sh Pos C c. c Sh Pos;
 let cshape : {Sh} -> Container {Sh} -> U
-    = \c. c (\_. U) (\Sh Pos. Sh);
+    = \c. c (\_. U) (\sh pos. sh);
 let cposition : {Sh} -> Container {Sh} -> Sh -> U
-    = \c. c (\Sh. Sh -> U) (\Sh Pos. Pos);
+    = \c. c (\sh. sh -> U) (\sh pos. pos);
 let cextend : {Sh}{sh : Sh} -> Container {Sh} -> U -> U
     = \{Sh}{sh} C X. Sigma Sh (\s. (cposition {Sh} C) s -> X) {sh};
+let cmap : {Sh}{C : Container {Sh}}{X Y}(f : X -> Y){sh : Sh} -> (cextend {Sh}{sh} C) X -> (cextend {Sh}{sh} C) Y
+    = \{Sh}{C}{X}{Y} f {sh}. smapProj2 {Sh}{\s. (cposition {Sh} C) s -> X}{\s. (cposition {Sh} C) s -> Y} (comp f) {sh};
 
---proj2 (tt (cextend {Nat} (cpair Nat (\n. Fin {n})) Bit)
---    (dpair (suc (suc zero)) (\fn. listLookup (cons I (cons O nil)) fn))) (fz)
+--proj2 (tt (cextend (cpair Nat (\n. Fin {n})) Bool)
+--    (dpair (suc (suc zero)) (\fn. listLookup (cons true (cons false nil)) fn))) (fz)
+--proj2 (cmap {C=cpair Nat (\n. Fin {n})} eqz
+--    (dpair (suc (suc zero)) (\fn. listLookup (cons (suc zero) (cons zero nil)) fn))) (fz)
 
 
-let CMorphism : {Sh1 Sh2 cmS}(C1 C2 : Container) -> U
-    = \{Sh1}{Sh2}{cmS} C1 C2. {M : (sh1 : U)(sh2 : U) -> Container {sh1} -> Container {sh2} -> (sh1 -> sh2) -> U} ->
-        ({sh1 sh2 c1 c2}(shape : sh1 -> sh2)(position : {s} -> (cposition c2) (shape s) -> (cposition c1) s) ->
-        M sh1 sh2 c1 c2 shape) -> M Sh1 Sh2 C1 C2 cmS;
-let cmpair : {Sh1 Sh2 C1 C2}(cmS : Sh1 -> Sh2) -> ({s} -> (cposition C2) (cmS s) -> (cposition C1) s) -> CMorphism C1 C2
-    = \{Sh1}{Sh2}{C1}{C2} cmS cmP CM. CM {Sh1}{Sh2}{C1}{C2} cmS cmP;
+let CMorphism : {Sh1 Sh2}(C1 C2 : Container){Sf} -> U
+    = \{Sh1}{Sh2} C1 C2 {Sf}. {M : (sh1 sh2 : U) -> Container {sh1} -> Container {sh2} -> (sh1 -> sh2) -> U} ->
+        ({sh1 sh2 c1 c2}(sf : sh1 -> sh2)(pf : {s} -> (cposition c2) (sf s) -> (cposition c1) s) ->
+        M sh1 sh2 c1 c2 sf) -> M Sh1 Sh2 C1 C2 Sf;
+let cmpair : {Sh1 Sh2 C1 C2}(Sf : Sh1 -> Sh2) -> ({s} -> (cposition C2) (Sf s) -> (cposition C1) s) -> CMorphism C1 C2
+    = \{Sh1}{Sh2}{C1}{C2} Sf Pf CM. CM {Sh1}{Sh2}{C1}{C2} Sf Pf;
 let cmshape : {Sh1 Sh2 C1 C2} -> CMorphism C1 C2 -> Sh1 -> Sh2
-    = \CM. CM {\Sh1 Sh2 _ _ _. Sh1 -> Sh2} (\cmS cmP. cmS);
-let cmposition : {cmS C1 C2} -> CMorphism {cmS=cmS} C1 C2 -> {s} -> (cposition C2) (cmS s) -> (cposition C1) s
-    = \CM. CM {\_ _ C1 C2 cmS. {s} -> (cposition C2) (cmS s) -> (cposition C1) s} (\cmS cmP. cmP);
---let cmExtend ...
+    = \CM. CM {\sh1 sh2 _ _ _. sh1 -> sh2} (\sf pf. sf);
+let cmposition : {C1 C2 Sf} -> CMorphism C1 C2 {Sf} -> {s} -> (cposition C2) (Sf s) -> (cposition C1) s
+    = \CM. CM {\_ _ c1 c2 sf. {s} -> (cposition c2) (sf s) -> (cposition c1) s} (\sf pf. pf);
+let cmextend : {X Sh1 Sh2 C1 C2 Sf} -> CMorphism C1 C2 {Sf} -> (cextend C1) X -> (cextend C2) X
+    = \{X} CM. CM {\_ _ c1 c2 _. {s} -> (cextend c1) X -> (cextend c2) X} (\sf pf. smap sf (\psx. comp psx pf));
 
 let AllC : (C : Container){X}(P : X -> U)(cx : cextend C X) -> U
     = \C P cx. {A} -> ((proof : {p} -> P (proj2 cx p)) -> A) -> A;
 let AnyC : (C : Container){X}(P : X -> U)(cx : cextend C X) -> U
     = \C P cx. {A} -> ((proof : Sigma _ (\p. P (proj2 cx p))) -> A) -> A;
+
+
+-- Propositions
+
+let iscontr : U -> U = \A. Sigma A (\a. (x : A) -> Eq {A} a x);
+let isprop : U -> U = \A. (x y : A) -> iscontr (Eq {A} x y);
+let eqIsContr : {A} -> iscontr A -> {x y : A} -> Eq {A} x y
+    = \isC {x}{y}. isC (\_. Eq _ _) (\_ C. trans (C y) (sym (C x)));
+let Prop : U = Sigma U isprop;
+let typeProp : Prop -> U = proj1;
+
+
+-- W-types
+
+let WC : {Sh} -> Container {Sh} -> U
+    = \{Sh} C. (W : U) -> (sup : (cextend C) W -> W) -> W;
+--WC (cpair Nat (\n. Fin {n}))
 
 
 
