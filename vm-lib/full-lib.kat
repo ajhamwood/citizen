@@ -67,6 +67,7 @@ let typeof : {A} -> A -> U                            = \{A} a. A;
 
 let Void : U                                          = Bot;
 let absurd : {A} -> Void -> A                         = exfalso;
+let absurdD : {A : Void -> U}(v : Void) -> A v        = \{A} v. exfalso {A v} v;
 
 let absurdIsUnique : {C}(h : Void -> C)(w : Bot) -> Eq {C} (exfalso w) (h w)
     = \{C} h. exfalso;
@@ -196,7 +197,7 @@ let splitListAtHead : {A} -> List A -> Maybe (Pair A (List A))
     = \{A} l. snd (l (Pair (List A) (Maybe (Pair A (List A)))) (pair nil nothing)
         (\a p. pair (cons a (fst p)) (just (pair a (fst p)))));
 let listLookup : {A}(l : List A) -> Fin {length l} -> A
-    = \{A} l fn. (fn (\n. List A) (\acc. listTail acc) l) A _ (\a as. a);
+    = \{A} l fn. (fn (\_. List A) (\acc. (listTail acc) (List A) _ id) l) A _ (\a as. a);
 
 let listUpdate : {A} -> Nat -> List A -> A -> List A
     = \{A} n l newA. foldlist {A}{List A} (\l a acc. cons ((diff n (length l)) A (\_. a) newA) acc) nil l;
@@ -1030,9 +1031,9 @@ let Prod : (A B : U){a : A} -> U = \A B {a}. Sigma A (const B) {a};
 let ndpair : {A B}(a : A)(b : B) -> Prod A B {a}
     = \a b S s. s a b;
 let smapProj1 : {A B C}(f : A -> B){a} -> Prod A C {a} -> Prod B C {f a}
-    = \{A}{B}{C} f {a}. smap {A}{B}{const C}{const C} f id {a};
+    = \{A}{B}{C} f. smap {A}{B}{const C}{const C} f id;
 let smapProj2 : {A}{B C : A -> U}(f : {x} -> B x -> C x){a : A} -> Sigma A B {a} -> Sigma A C {a}
-    = \{A}{B}{C} f {a}. smap {A}{A}{B}{C} id f {a};
+    = \{A}{B}{C} f. smap {A}{A}{B}{C} id f;
 
 
 -- Containers
@@ -1055,6 +1056,15 @@ let cmap : {Sh}{C : Container {Sh}}{X Y}(f : X -> Y){sh : Sh} -> (cextend {Sh}{s
 --proj2 (cmap {C=cpair Nat (\n. Fin {n})} eqz
 --    (dpair (suc (suc zero)) (\fn. listLookup (cons (suc zero) (cons zero nil)) fn))) (fz)
 
+let ListC : U -> U
+    = \A. cextend (cpair Nat (\n. Fin {n})) A;
+let nilC : {A} -> ListC A
+    = \{A}. dpair zero (absurd _);
+--let consC : {A} -> A -> ListC A -> ListC A
+--    = \{A} a asC. asC (\_. ListC A)
+--        (\(n : Nat)(fxs : Fin {n} -> A). dpair {Nat}{\n. Fin {n} -> A} (suc n)
+--            (\(fsn : Fin {suc n}). fsn (\n. A) fxs a));
+
 
 let CMorphism : {Sh1 Sh2}(C1 C2 : Container){Sf} -> U
     = \{Sh1}{Sh2} C1 C2 {Sf}. {M : (sh1 sh2 : U) -> Container {sh1} -> Container {sh2} -> (sh1 -> sh2) -> U} ->
@@ -1075,6 +1085,30 @@ let AnyC : (C : Container){X}(P : X -> U)(cx : cextend C X) -> U
     = \C P cx. {A} -> ((proof : Sigma _ (\p. P (proj2 cx p))) -> A) -> A;
 
 
+-- W-types
+
+let W : (A : U)(B : A -> U){a : A} -> U
+    = \A B {a}. (V : (X : U)(Y : X -> U){x : X} -> U)
+        (sup : {X}{Y : X -> U}(sh1 : X)
+            (com : Y sh1 -> {sh2} -> V X Y {sh2}) -> V X Y {sh1}) -> V A B {a};
+let sup : {A}{B : A -> U}(sh1 : A)(com :B sh1 -> {sh2} -> W A B {sh2}){b : B sh1} -> W A B {sh1}
+    = \x a {b}. a b;
+let wshape : {A}{B : A -> U}{a : A} -> W A B {a} -> A
+--    = \{a=a} _. a;
+    = \w. w (\A B. A) (\a b. a);
+--let wcomponent : {A}{B : A -> U}{a : A}(w : W A B {a}) -> B (wshape w) -> W A B {a}
+--    = \{X}{Y}{x} w. w (\A B {a}. B a -> W A B {a}) (\{A}{B}(a : A)(b : B a -> W A B {a}). b);
+
+let ListWCom : {A} -> Maybe A -> U
+    = \m. m U Void (\_. Unit);
+let ListW : U -> U
+    = \A. W (Maybe A) ListWCom;
+let nilW : {A} -> ListW A
+    = \{A}. sup {Maybe A}{ListWCom} nothing absurd;
+--let consW : {A} -> A -> ListW A -> ListW A
+--    = \{A} a asW. sup {Maybe A}{ListWCom} (just a) (\_. asW) {tt};
+
+
 -- Propositions
 
 let iscontr : U -> U = \A. Sigma A (\a. (x : A) -> Eq {A} a x);
@@ -1083,13 +1117,6 @@ let eqIsContr : {A} -> iscontr A -> {x y : A} -> Eq {A} x y
     = \isC {x}{y}. isC (\_. Eq _ _) (\_ C. trans (C y) (sym (C x)));
 let Prop : U = Sigma U isprop;
 let typeProp : Prop -> U = proj1;
-
-
--- W-types
-
-let WC : {Sh} -> Container {Sh} -> U
-    = \{Sh} C. (W : U) -> (sup : (cextend C) W -> W) -> W;
---WC (cpair Nat (\n. Fin {n}))
 
 
 
